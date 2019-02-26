@@ -22,8 +22,8 @@ function copyPrototype(type, name, newName)
 end
 
 
-magic_lamp_item = copyPrototype("item","programmable-speaker","magic-lamp")
-magic_lamp_entity = copyPrototype("programmable-speaker","programmable-speaker","magic-lamp")
+magic_lamp_item = copyPrototype("item","constant-combinator","magic-lamp")
+magic_lamp_entity = copyPrototype("constant-combinator","constant-combinator","magic-lamp")
 
 data:extend({
   {

@@ -103,7 +103,7 @@ script.on_event(defines.events.on_tick, function()
               text= format:format(value),
               surface = lamp.entity.surface,
               target = lamp.entity,
-              target_offset = { -0.5, -1.6 - i},
+              target_offset = { -0.5, -0.6 + i},
               color = {r=1,g=1,b=1, a=0.8},
               alignment = "right",
               font = "default-mono"
@@ -120,7 +120,7 @@ script.on_event(defines.events.on_tick, function()
                 sprite = type .. "/" .. sigconfig[i].signal.name,
                 surface = lamp.entity.surface,
                 target = lamp.entity,
-                target_offset = { 0, -1 - i},
+                target_offset = { 0, i},
                 tint = {r=1,g=1,b=1, a=0.6},
               }
             end
@@ -141,7 +141,7 @@ script.on_event(defines.events.on_tick, function()
                 text= {type .. "-name." .. sigconfig[i].signal.name},
                 surface = lamp.entity.surface,
                 target = lamp.entity,
-                target_offset = { 0.5, -1.6 - i},
+                target_offset = { 0.5, -0.6 + i},
                 color = {r=1,g=1,b=1, a=0.8},
                 alignment = "left",
                 font = "default-mono"
@@ -200,6 +200,7 @@ script.on_event({defines.events.on_robot_built_entity,defines.events.on_built_en
         values = {},
       }
     }
+    --TODO: read config from CC if valid, clear if not
   end
 end)
 script.on_event({defines.events.on_entity_died, defines.events.on_robot_mined_entity,defines.events.on_player_mined_entity}, function(event)
@@ -318,8 +319,8 @@ function create_lamp_gui(entity,player)
     name='magic_lamp.mode',
     items = {
       {"magic-lamp.mode-numeric"},
-      {"magic-lamp.mode-iconstrip"}, -- bitmask icon strip
-      {"magic-lamp.mode-terminal"} -- terminal mode, utf8 strings on signals in feathernet order. offset with a header on something reserved,or just require block moves?
+      --{"magic-lamp.mode-iconstrip"}, -- bitmask icon strip
+      --{"magic-lamp.mode-terminal"} -- terminal mode, utf8 strings on signals in feathernet order. offset with a header on something reserved,or just require block moves?
     },
     selected_index = mode
   }
@@ -332,6 +333,47 @@ function create_lamp_gui(entity,player)
 
   --TODO: mode 3/Terminal
   return flow
+end
+
+function write_config_to_cc(entity)
+  local config = global.lamps[entity.unit_number].config
+  local control = entity.get_or_create_control_behavior()
+
+  local frame = {}
+  frame[1] = {index = #frame+1, signal = {type="virtual", name="signal-dot"}, count = config.mode }
+  if config.mode == 1 then
+    if config.numeric then
+      if config.numeric.icons then
+        frame[1].count = frame[1].count + 0x40000000
+      end
+      if config.numeric.names then
+        frame[1].count = frame[1].count + 0x20000000
+      end
+      if config.numeric.signals then
+        for i=1,4 do
+          if config.numeric.signals[i] then
+            local count = config.numeric.signals[i].type
+            if config.numeric.signals[i].hex then
+              count = count + 0x40000000
+            end
+            frame[i+1] = {index = #frame+1, signal = config.numeric.signals[i].signal, count = count }
+          else
+            frame[i+1] = {index = #frame+1, signal = nil, count = 0 }
+          end
+        end
+      end
+    end
+  end
+
+  control.enabled = false
+  control.parameters = {parameters = frame}
+
+end
+
+function reload_gui_after_change(entity,player)
+  write_config_to_cc(entity)
+  player.opened.destroy()
+  player.opened = create_lamp_gui(entity,player)
 end
 
 script.on_event(defines.events.on_gui_opened, function(event)
@@ -349,18 +391,15 @@ script.on_event(defines.events.on_gui_selection_state_changed, function(event)
   if event.element.name == "magic_lamp.mode" then
     local lamp = global.lamps[global.open[player.index]]
     lamp.config.mode = event.element.selected_index
-    player.opened.destroy()
-    player.opened = create_lamp_gui(lamp.entity,player)
+    reload_gui_after_change(lamp.entity,player)
   elseif event.element.name == "magic_lamp.endian" then
     local lamp = global.lamps[global.open[player.index]]
     lamp.config.iconstrip.endian = event.element.selected_index
-    player.opened.destroy()
-    player.opened = create_lamp_gui(lamp.entity,player)
+    reload_gui_after_change(lamp.entity,player)
   elseif event.element.name == "magic_lamp.datatype" then
     local lamp = global.lamps[global.open[player.index]]
     lamp.config.numeric.signals[tonumber(event.element.parent.name)].type = event.element.selected_index
-    player.opened.destroy()
-    player.opened = create_lamp_gui(lamp.entity,player)
+    reload_gui_after_change(lamp.entity,player)
   end
 end)
 
@@ -370,14 +409,11 @@ script.on_event(defines.events.on_gui_checked_state_changed, function(event)
   if event.element.name == "magic_lamp.icons" then
     local lamp = global.lamps[global.open[player.index]]
     lamp.config.numeric.icons = event.element.state
-    player.opened.destroy()
-    player.opened = create_lamp_gui(lamp.entity,player)
+    reload_gui_after_change(lamp.entity,player)
   elseif event.element.name == "magic_lamp.names" then
     local lamp = global.lamps[global.open[player.index]]
     lamp.config.numeric.names = event.element.state
-    player.opened.destroy()
-    player.opened = create_lamp_gui(lamp.entity,player)
-
+    reload_gui_after_change(lamp.entity,player)
   elseif event.element.name == "magic_lamp.hex" then
     game.print(event.element.parent.name)
     local lamp = global.lamps[global.open[player.index]]
@@ -390,8 +426,7 @@ script.on_event(defines.events.on_gui_checked_state_changed, function(event)
       }
     end
     sigconfig[i].hex = event.element.state
-    player.opened.destroy()
-    player.opened = create_lamp_gui(lamp.entity,player)
+    reload_gui_after_change(lamp.entity,player)
   end
 end)
 
@@ -410,8 +445,7 @@ script.on_event(defines.events.on_gui_elem_changed, function(event)
       }
     end
     sigconfig[i].signal = event.element.elem_value
-    player.opened.destroy()
-    player.opened = create_lamp_gui(lamp.entity,player)
+    reload_gui_after_change(lamp.entity,player)
   end
 end)
 
@@ -427,7 +461,7 @@ end)
 
 script.on_event(defines.events.on_entity_settings_pasted, function(event)
   if event.source.name == "magic-lamp" and event.destination.name== "magic-lamp" then
-    -- TODO: read pasted config from alert string if valid
+    --TODO: read config from CC if valid, restore if not
   elseif event.destination.name== "magic-lamp" then
     -- TODO: restore alert string from config
   end
