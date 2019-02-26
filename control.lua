@@ -386,7 +386,6 @@ script.on_event(defines.events.on_gui_opened, function(event)
 end)
 
 script.on_event(defines.events.on_gui_selection_state_changed, function(event)
-  game.print(event.element.name)
   local player = game.players[event.player_index]
   if event.element.name == "magic_lamp.mode" then
     local lamp = global.lamps[global.open[player.index]]
@@ -404,7 +403,6 @@ script.on_event(defines.events.on_gui_selection_state_changed, function(event)
 end)
 
 script.on_event(defines.events.on_gui_checked_state_changed, function(event)
-  game.print(event.element.name)
   local player = game.players[event.player_index]
   if event.element.name == "magic_lamp.icons" then
     local lamp = global.lamps[global.open[player.index]]
@@ -415,7 +413,6 @@ script.on_event(defines.events.on_gui_checked_state_changed, function(event)
     lamp.config.numeric.names = event.element.state
     reload_gui_after_change(lamp.entity,player)
   elseif event.element.name == "magic_lamp.hex" then
-    game.print(event.element.parent.name)
     local lamp = global.lamps[global.open[player.index]]
     local i = tonumber(event.element.parent.name)
     if not lamp.config.numeric.signals then lamp.config.numeric.signals = {} end
@@ -431,8 +428,6 @@ script.on_event(defines.events.on_gui_checked_state_changed, function(event)
 end)
 
 script.on_event(defines.events.on_gui_elem_changed, function(event)
-  game.print(event.element.name)
-  game.print(event.element.parent.name)
   local player = game.players[event.player_index]
   if event.element.name == "magic_lamp.signal" then
     local lamp = global.lamps[global.open[player.index]]
