@@ -200,7 +200,8 @@ script.on_event({defines.events.on_robot_built_entity,defines.events.on_built_en
         values = {},
       }
     }
-    --TODO: read config from CC if valid, clear if not
+    --read config from CC if valid, clear if not
+    read_config_from_cc(entity)
   end
 end)
 script.on_event({defines.events.on_entity_died, defines.events.on_robot_mined_entity,defines.events.on_player_mined_entity}, function(event)
@@ -370,6 +371,37 @@ function write_config_to_cc(entity)
 
 end
 
+function read_config_from_cc(entity)
+  local config = global.lamps[entity.unit_number].config
+  local control = entity.get_or_create_control_behavior()
+
+  if not control.enabled then
+    local frame = control.parameters.parameters
+
+    if frame[1].signal.type == "virtual" and frame[1].signal.name == "signal-dot" then
+      local mode = frame[1].count % 0x100
+      if mode == 1 then
+        config.mode = 1
+        config.numeric.icons = (bit32.band(frame[1].count, 0x40000000) ~= 0)
+        config.numeric.names = (bit32.band(frame[1].count, 0x20000000) ~= 0)
+        for i=1,4 do
+          if frame[i+1].signal.name then
+            config.numeric.signals[i].signal = frame[i+1].signal
+            config.numeric.signals[i].type = frame[i+1].count % 0x100
+            if config.numeric.signals[i].type > 3 or config.numeric.signals[i].type < 1 then
+              config.numeric.signals[i].type = 1
+            end
+            config.numeric.signals[i].hex = (bit32.band(frame[i+1].count, 0x40000000) ~= 0)
+          end
+        end
+      end
+    end
+  end
+  -- and write it back in case any of it was invalid...
+  write_config_to_cc(entity)
+end
+
+
 function reload_gui_after_change(entity,player)
   write_config_to_cc(entity)
   player.opened.destroy()
@@ -456,8 +488,10 @@ end)
 
 script.on_event(defines.events.on_entity_settings_pasted, function(event)
   if event.source.name == "magic-lamp" and event.destination.name== "magic-lamp" then
-    --TODO: read config from CC if valid, restore if not
+    -- read config from CC if valid, restore if not
+    read_config_from_cc(event.destination)
   elseif event.destination.name== "magic-lamp" then
-    -- TODO: restore alert string from config
+    --  restore config
+    write_config_to_cc(event.destination)
   end
 end)
