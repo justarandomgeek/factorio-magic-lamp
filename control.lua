@@ -1,16 +1,33 @@
+local ml_defines = {
+  configmode = {
+    numeric = 1,
+    iconstrip = 2,
+    terminal = 3,
+  }
+  iconstrip_endian = {
+    lsb_left = 1,
+    lsb_right = 2,
+  }
+  datatype = {
+    signed = 1,
+    unsigned=2,
+    float = 3,
+  }
+}
+
 script.on_init(function()
   global = {
     --[[
     lamps[unit_number] = {
       entity = entity,
       config = {
-        mode = index(1=numeric, 2=iconstrip, 3=terminal),
-        iconstrip = {endian = index(1=left,2=right), numeric=true},
+        mode = ml_defines.configmode,
+        iconstrip = {endian = ml_defines.iconstrip_endian, numeric=true},
         numeric = {
           icons = true,
           names = false,
           signals = {
-            {signal=SignalID, type=index(1=signed,2=unsigned,3=float), hex=false},
+            {signal=SignalID, type= ml_defines.datatype, hex=false},
           }
         }
       }
@@ -68,7 +85,7 @@ end
 
 script.on_event(defines.events.on_tick, function()
   for _,lamp in pairs(global.lamps) do
-    if lamp.config.mode == 1 then
+    if lamp.config.mode == ml_defines.configmode.numeric then
       local sigconfig = lamp.config.numeric.signals
       local signals = lamp.entity.get_merged_signals() or {}
 
@@ -79,18 +96,18 @@ script.on_event(defines.events.on_tick, function()
           local hex = sigconfig[i].hex
           local type = sigconfig[i].type
           local format = hex and "0x%08x" or "%i"
-          if type == 1 and hex and value < 0 then
+          if type == ml_defines.datatype.signed and hex and value < 0 then
             -- negative hex
             value = -value
             format = "-0x%08x"
 
-          elseif type == 2 then
+          elseif type == ml_defines.datatype.unsigned then
             --unsigned.
             format = hex and "0x%08x" or "%u"
             -- negative values get sign extended to 64bit by default, so fold it around ourselves...
             if value < 0 then value = value + 0x100000000 end
 
-          elseif type == 3 then
+          elseif type == ml_defines.datatype.float then
             -- float. convert...
             value = float_from_int(value)
             format = hex and "%a" or "%g"
@@ -181,16 +198,16 @@ script.on_event({defines.events.on_robot_built_entity,defines.events.on_built_en
     global.lamps[entity.unit_number] = {
       entity = entity,
       config = {
-        mode = 1,
-        iconstrip = {endian = 1, numeric=true},
+        mode = ml_defines.configmode.numeric,
+        iconstrip = {endian = ml_defines.iconstrip_endian.lsb_left, numeric=true},
         numeric = {
           icons = true,
           names = false,
           signals = {
-            {type=1, hex=false},
-            {type=1, hex=false},
-            {type=1, hex=false},
-            {type=1, hex=false},
+            {type=ml_defines.datatype.signed, hex=false},
+            {type=ml_defines.datatype.signed, hex=false},
+            {type=ml_defines.datatype.signed, hex=false},
+            {type=ml_defines.datatype.signed, hex=false},
           },
         },
       },
@@ -226,7 +243,7 @@ function create_iconstrip_frame(flow,stripconfig)
       {"magic-lamp.lsb-left"},
       {"magic-lamp.lsb-right"},
     },
-    selected_index = stripconfig and stripconfig.endian or 1
+    selected_index = stripconfig and stripconfig.endian or ml_defines.iconstrip_endian.lsb_left
   }
 end
 
@@ -234,7 +251,7 @@ end
 function create_signal_frame(numframe,sigconfig,i)
 
   if not sigconfig then
-    sigconfig = { type = 1, hex = false }
+    sigconfig = { type = ml_defines.datatype.signed, hex = false }
   end
 
   local sigframe = numframe.add{
@@ -258,7 +275,7 @@ function create_signal_frame(numframe,sigconfig,i)
       {"magic-lamp.datatype-unsigned"},
       {"magic-lamp.datatype-float"},
     },
-    selected_index = sigconfig and sigconfig.type or 1
+    selected_index = sigconfig and sigconfig.type or ml_defines.datatype.signed
   }
 
   sigframe.add{
@@ -314,7 +331,7 @@ function create_lamp_gui(entity,player)
       direction = 'vertical',
   }
 
-  local mode =  config.mode or 1
+  local mode = config.mode or ml_defines.configmode.numeric
   modeframe.add{
     type='drop-down',
     name='magic_lamp.mode',
@@ -326,9 +343,9 @@ function create_lamp_gui(entity,player)
     selected_index = mode
   }
 
-  if mode==1 then
+  if mode==ml_defines.configmode.numeric then
     create_numeric_frame(flow,config.numeric)
-  elseif mode==2 then
+  elseif mode==ml_defines.configmode.iconstrip then
     create_iconstrip_frame(flow,config.iconstrip)
   end
 
@@ -342,7 +359,7 @@ function write_config_to_cc(entity)
 
   local frame = {}
   frame[1] = {index = #frame+1, signal = {type="virtual", name="signal-dot"}, count = config.mode }
-  if config.mode == 1 then
+  if config.mode == ml_defines.configmode.numeric then
     if config.numeric then
       if config.numeric.icons then
         frame[1].count = frame[1].count + 0x40000000
@@ -380,16 +397,16 @@ function read_config_from_cc(entity)
 
     if frame[1].signal.type == "virtual" and frame[1].signal.name == "signal-dot" then
       local mode = frame[1].count % 0x100
-      if mode == 1 then
-        config.mode = 1
+      if mode == ml_defines.configmode.numeric then
+        config.mode = ml_defines.configmode.numeric
         config.numeric.icons = (bit32.band(frame[1].count, 0x40000000) ~= 0)
         config.numeric.names = (bit32.band(frame[1].count, 0x20000000) ~= 0)
         for i=1,4 do
           if frame[i+1].signal.name then
             config.numeric.signals[i].signal = frame[i+1].signal
             config.numeric.signals[i].type = frame[i+1].count % 0x100
-            if config.numeric.signals[i].type > 3 or config.numeric.signals[i].type < 1 then
-              config.numeric.signals[i].type = 1
+            if config.numeric.signals[i].type > ml_defines.datatype.float or config.numeric.signals[i].type < ml_defines.datatype.signed then
+              config.numeric.signals[i].type = ml_defines.datatype.signed
             end
             config.numeric.signals[i].hex = (bit32.band(frame[i+1].count, 0x40000000) ~= 0)
           end
