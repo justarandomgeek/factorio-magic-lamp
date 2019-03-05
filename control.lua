@@ -3,16 +3,16 @@ local ml_defines = {
     numeric = 1,
     iconstrip = 2,
     terminal = 3,
-  }
+  },
   iconstrip_endian = {
     lsb_left = 1,
     lsb_right = 2,
-  }
+  },
   datatype = {
     signed = 1,
     unsigned=2,
     float = 3,
-  }
+  },
 }
 
 script.on_init(function()
