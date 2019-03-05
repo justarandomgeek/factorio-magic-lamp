@@ -25,6 +25,16 @@ end
 magic_lamp_item = copyPrototype("item","constant-combinator","magic-lamp")
 magic_lamp_entity = copyPrototype("constant-combinator","constant-combinator","magic-lamp")
 
+if data.raw.technology["circuit-network"] then
+  if not data.raw.technology["circuit-network"].effects then data.raw.technology["circuit-network"].effects = {} end
+
+  table.insert(data.raw.technology["circuit-network"].effects,
+    {
+      type = "unlock-recipe",
+      recipe = "magic-lamp"
+    })
+end
+
 data:extend({
   {
     type = "font",
@@ -36,4 +46,15 @@ data:extend({
   },
   magic_lamp_item,
   magic_lamp_entity,
+  {
+    type = "recipe",
+    name = "magic-lamp",
+    enabled = false,
+    ingredients =
+    {
+      {"small-lamp", 1},
+      {"electronic-circuit", 1},
+    },
+    result="magic-lamp",
+  },
 })
