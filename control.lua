@@ -83,6 +83,20 @@ function get_signal_from_set(signal,set)
   return nil
 end
 
+function get_signal_bit_set(set)
+  local sigbits = {}
+  for i=0,30 do
+    for _,sig in pairs(set) do
+      local sigbit = bit32.extract(sig.count,i)
+      if sigbit==1 then
+        sigbits[i+1] = sig.signal
+        break
+      end
+    end
+  end
+  return sigbits
+end
+
 function on_tick_lamp(lamp)
   if lamp.config.mode == ml_defines.configmode.numeric then
     local sigconfig = lamp.config.numeric.signals
@@ -189,8 +203,36 @@ function on_tick_lamp(lamp)
 
 
   elseif lamp.config.mode == ml_defines.configmode.iconstrip then
-
-
+    local signals = lamp.entity.get_merged_signals() or {}
+    local bits = get_signal_bit_set(signals)
+    for i=1,31 do
+      if bits[i] then
+        local type = bits[i].type
+        if type == "virtual" then type = "virtual-signal" end
+        if lamp.render.iconstrip[i] and rendering.is_valid(lamp.render.iconstrip[i]) then
+          rendering.set_sprite(lamp.render.iconstrip[i], type .. "/" .. bits[i].name)
+        else
+          local pos = {0,1}
+          if lamp.config.iconstrip.endian == ml_defines.iconstrip_endian.lsb_left then
+            pos[1] =  -16 + i
+          else
+            pos[1] =  16 - i
+          end
+          lamp.render.iconstrip[i] = rendering.draw_sprite{
+            sprite = type .. "/" .. bits[i].name,
+            surface = lamp.entity.surface,
+            target = lamp.entity,
+            target_offset = pos,
+            tint = {r=1,g=1,b=1, a=0.6},
+          }
+        end
+      else
+        if lamp.render.iconstrip[i] and rendering.is_valid(lamp.render.iconstrip[i]) then
+          rendering.destroy(lamp.render.iconstrip[i])
+          lamp.render.iconstrip[i] = nil
+        end
+      end
+    end
   end
 end
 
@@ -224,6 +266,7 @@ script.on_event({defines.events.on_robot_built_entity,defines.events.on_built_en
         icons = {},
         names = {},
         values = {},
+        iconstrip = {},
       }
     }
     --read config from CC if valid, clear if not
@@ -461,10 +504,27 @@ script.on_event(defines.events.on_gui_selection_state_changed, function(event)
     local lamp = global.lamps[global.open[player.index]]
     lamp.config.mode = event.element.selected_index
     reload_gui_after_change(lamp.entity,player)
+    -- destroy all sprites to force re-render
+    for _,t in pairs(lamp.render) do
+      for i,id in pairs(t) do
+        if rendering.is_valid(id) then
+          rendering.destroy(id)
+        end
+        lamp.render.names[i] = nil
+      end
+    end
+
   elseif event.element.name == "magic_lamp.endian" then
     local lamp = global.lamps[global.open[player.index]]
     lamp.config.iconstrip.endian = event.element.selected_index
     reload_gui_after_change(lamp.entity,player)
+    -- destroy iconstrip sprites to force re-render
+    for i,id in pairs(lamp.render.iconstrip) do
+      if rendering.is_valid(id) then
+        rendering.destroy(id)
+      end
+      lamp.render.names[i] = nil
+    end
   elseif event.element.name == "magic_lamp.datatype" then
     local lamp = global.lamps[global.open[player.index]]
     lamp.config.numeric.signals[tonumber(event.element.parent.name)].type = event.element.selected_index
