@@ -27,7 +27,7 @@ magic_lamp_entity = copyPrototype("constant-combinator","constant-combinator","m
 
 -- Common tech with Utility Combinators and Optera's Inventory Sensor
 if data.raw["technology"]["circuit-network-2"] then
-  table.insert( data.raw["technology"]["circuit-network"].effects,
+  table.insert( data.raw["technology"]["circuit-network-2"].effects,
     {
         type = "unlock-recipe",
         recipe = "magic-lamp"
