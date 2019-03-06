@@ -22,7 +22,7 @@ script.on_init(function()
       entity = entity,
       config = {
         mode = ml_defines.configmode,
-        iconstrip = {endian = ml_defines.iconstrip_endian, numeric=true},
+        iconstrip = {endian = ml_defines.iconstrip_endian},
         numeric = {
           icons = true,
           names = false,
@@ -83,112 +83,121 @@ function get_signal_from_set(signal,set)
   return nil
 end
 
-script.on_event(defines.events.on_tick, function()
-  for _,lamp in pairs(global.lamps) do
-    if lamp.config.mode == ml_defines.configmode.numeric then
-      local sigconfig = lamp.config.numeric.signals
-      local signals = lamp.entity.get_merged_signals() or {}
+function on_tick_lamp(lamp)
+  if lamp.config.mode == ml_defines.configmode.numeric then
+    local sigconfig = lamp.config.numeric.signals
+    local signals = lamp.entity.get_merged_signals() or {}
 
-      for i=1,4 do
-        if sigconfig[i] and sigconfig[i].signal then
-          local value = get_signal_from_set(sigconfig[i].signal,signals) or 0
+    for i=1,4 do
+      if sigconfig[i] and sigconfig[i].signal then
+        local value = get_signal_from_set(sigconfig[i].signal,signals) or 0
 
-          local hex = sigconfig[i].hex
-          local type = sigconfig[i].type
-          local format = hex and "0x%08x" or "%i"
-          if type == ml_defines.datatype.signed and hex and value < 0 then
-            -- negative hex
-            value = -value
-            format = "-0x%08x"
+        local hex = sigconfig[i].hex
+        local type = sigconfig[i].type
+        local format = hex and "0x%08x" or "%i"
+        if type == ml_defines.datatype.signed and hex and value < 0 then
+          -- negative hex
+          value = -value
+          format = "-0x%08x"
 
-          elseif type == ml_defines.datatype.unsigned then
-            --unsigned.
-            format = hex and "0x%08x" or "%u"
-            -- negative values get sign extended to 64bit by default, so fold it around ourselves...
-            if value < 0 then value = value + 0x100000000 end
+        elseif type == ml_defines.datatype.unsigned then
+          --unsigned.
+          format = hex and "0x%08x" or "%u"
+          -- negative values get sign extended to 64bit by default, so fold it around ourselves...
+          if value < 0 then value = value + 0x100000000 end
 
-          elseif type == ml_defines.datatype.float then
-            -- float. convert...
-            value = float_from_int(value)
-            format = hex and "%a" or "%g"
-          end
+        elseif type == ml_defines.datatype.float then
+          -- float. convert...
+          value = float_from_int(value)
+          format = hex and "%a" or "%g"
+        end
 
-          if lamp.render.values[i] and rendering.is_valid(lamp.render.values[i]) then
-            rendering.set_text(lamp.render.values[i], format:format(value))
+        if lamp.render.values[i] and rendering.is_valid(lamp.render.values[i]) then
+          rendering.set_text(lamp.render.values[i], format:format(value))
+        else
+          lamp.render.values[i] = rendering.draw_text{
+            text= format:format(value),
+            surface = lamp.entity.surface,
+            target = lamp.entity,
+            target_offset = { -0.5, -0.6 + i},
+            color = {r=1,g=1,b=1, a=0.8},
+            alignment = "right",
+            font = "default-mono"
+          }
+        end
+
+        if lamp.config.numeric.icons then
+          local type = sigconfig[i].signal.type
+          if type == "virtual" then type = "virtual-signal" end
+          if lamp.render.icons[i] and rendering.is_valid(lamp.render.icons[i]) then
+            rendering.set_sprite(lamp.render.icons[i], type .. "/" .. sigconfig[i].signal.name)
           else
-            lamp.render.values[i] = rendering.draw_text{
-              text= format:format(value),
+            lamp.render.icons[i] = rendering.draw_sprite{
+              sprite = type .. "/" .. sigconfig[i].signal.name,
               surface = lamp.entity.surface,
               target = lamp.entity,
-              target_offset = { -0.5, -0.6 + i},
+              target_offset = { 0, i},
+              tint = {r=1,g=1,b=1, a=0.6},
+            }
+          end
+        else
+          if lamp.render.icons[i] and rendering.is_valid(lamp.render.icons[i]) then
+            rendering.destroy(lamp.render.icons[i])
+            lamp.render.icons[i] = nil
+          end
+        end
+
+        if lamp.config.numeric.names then
+          local type = sigconfig[i].signal.type
+          if type == "virtual" then type = "virtual-signal" end
+          if lamp.render.names[i] and rendering.is_valid(lamp.render.names[i]) then
+            rendering.set_text(lamp.render.names[i], {type .. "-name." .. sigconfig[i].signal.name})
+          else
+            lamp.render.names[i] = rendering.draw_text{
+              text= {type .. "-name." .. sigconfig[i].signal.name},
+              surface = lamp.entity.surface,
+              target = lamp.entity,
+              target_offset = { 0.5, -0.6 + i},
               color = {r=1,g=1,b=1, a=0.8},
-              alignment = "right",
+              alignment = "left",
               font = "default-mono"
             }
           end
-
-          if lamp.config.numeric.icons then
-            local type = sigconfig[i].signal.type
-            if type == "virtual" then type = "virtual-signal" end
-            if lamp.render.icons[i] and rendering.is_valid(lamp.render.icons[i]) then
-              rendering.set_sprite(lamp.render.icons[i], type .. "/" .. sigconfig[i].signal.name)
-            else
-              lamp.render.icons[i] = rendering.draw_sprite{
-                sprite = type .. "/" .. sigconfig[i].signal.name,
-                surface = lamp.entity.surface,
-                target = lamp.entity,
-                target_offset = { 0, i},
-                tint = {r=1,g=1,b=1, a=0.6},
-              }
-            end
-          else
-            if lamp.render.icons[i] and rendering.is_valid(lamp.render.icons[i]) then
-              rendering.destroy(lamp.render.icons[i])
-              lamp.render.icons[i] = nil
-            end
-          end
-
-          if lamp.config.numeric.names then
-            local type = sigconfig[i].signal.type
-            if type == "virtual" then type = "virtual-signal" end
-            if lamp.render.names[i] and rendering.is_valid(lamp.render.names[i]) then
-              rendering.set_text(lamp.render.names[i], {type .. "-name." .. sigconfig[i].signal.name})
-            else
-              lamp.render.names[i] = rendering.draw_text{
-                text= {type .. "-name." .. sigconfig[i].signal.name},
-                surface = lamp.entity.surface,
-                target = lamp.entity,
-                target_offset = { 0.5, -0.6 + i},
-                color = {r=1,g=1,b=1, a=0.8},
-                alignment = "left",
-                font = "default-mono"
-              }
-            end
-          else
-            if lamp.render.names[i] and rendering.is_valid(lamp.render.names[i]) then
-              rendering.destroy(lamp.render.names[i])
-              lamp.render.names[i] = nil
-            end
-          end
-
-          --sigconfig[i] = {signal = nil, unsigned=false, hex=false, float=false
         else
           if lamp.render.names[i] and rendering.is_valid(lamp.render.names[i]) then
             rendering.destroy(lamp.render.names[i])
             lamp.render.names[i] = nil
           end
-          if lamp.render.icons[i] and rendering.is_valid(lamp.render.icons[i]) then
-            rendering.destroy(lamp.render.icons[i])
-            lamp.render.icons[i] = nil
-          end
-          if lamp.render.values[i] and rendering.is_valid(lamp.render.values[i]) then
-            rendering.destroy(lamp.render.values[i])
-            lamp.render.values[i] = nil
-          end
+        end
+
+        --sigconfig[i] = {signal = nil, unsigned=false, hex=false, float=false
+      else
+        if lamp.render.names[i] and rendering.is_valid(lamp.render.names[i]) then
+          rendering.destroy(lamp.render.names[i])
+          lamp.render.names[i] = nil
+        end
+        if lamp.render.icons[i] and rendering.is_valid(lamp.render.icons[i]) then
+          rendering.destroy(lamp.render.icons[i])
+          lamp.render.icons[i] = nil
+        end
+        if lamp.render.values[i] and rendering.is_valid(lamp.render.values[i]) then
+          rendering.destroy(lamp.render.values[i])
+          lamp.render.values[i] = nil
         end
       end
     end
 
+
+  elseif lamp.config.mode == ml_defines.configmode.iconstrip then
+
+
+  end
+end
+
+
+script.on_event(defines.events.on_tick, function()
+  for _,lamp in pairs(global.lamps) do
+    on_tick_lamp(lamp)
   end
 end)
 
@@ -337,7 +346,7 @@ function create_lamp_gui(entity,player)
     name='magic_lamp.mode',
     items = {
       {"magic-lamp.mode-numeric"},
-      --{"magic-lamp.mode-iconstrip"}, -- bitmask icon strip
+      {"magic-lamp.mode-iconstrip"}, -- bitmask icon strip
       --{"magic-lamp.mode-terminal"} -- terminal mode, utf8 strings on signals in feathernet order. offset with a header on something reserved,or just require block moves?
     },
     selected_index = mode
@@ -381,6 +390,12 @@ function write_config_to_cc(entity)
         end
       end
     end
+  elseif config.mode == ml_defines.configmode.iconstrip then
+    if config.iconstrip then
+      if config.iconstrip.endian == ml_defines.iconstrip_endian.lsb_right then
+        frame[1].count = frame[1].count + 0x40000000
+      end
+    end
   end
 
   control.enabled = false
@@ -410,6 +425,12 @@ function read_config_from_cc(entity)
             end
             config.numeric.signals[i].hex = (bit32.band(frame[i+1].count, 0x40000000) ~= 0)
           end
+        end
+      elseif mode == ml_defines.configmode.iconstrip then
+        if bit32.band(frame[1].count, 0x40000000) ~= 0 then
+          config.iconstrip.endian = ml_defines.iconstrip_endian.lsb_right
+        else
+          config.iconstrip.endian = ml_defines.iconstrip_endian.lsb_left
         end
       end
     end
