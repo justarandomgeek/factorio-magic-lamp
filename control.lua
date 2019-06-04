@@ -162,13 +162,18 @@ function on_tick_lamp(lamp)
         end
 
         if lamp.config.numeric.names then
-          local type = sigconfig[i].signal.type
-          if type == "virtual" then type = "virtual-signal" end
+          local protos = {
+            ["virtual"] = game.virtual_signal_prototypes,
+            ["item"] = game.item_prototypes,
+            ["fluid"] = game.fluid_prototypes
+          }
+          local name = protos[sigconfig[i].signal.type][sigconfig[i].signal.name].localised_name
+
           if lamp.render.names[i] and rendering.is_valid(lamp.render.names[i]) then
-            rendering.set_text(lamp.render.names[i], {type .. "-name." .. sigconfig[i].signal.name})
+            rendering.set_text(lamp.render.names[i], name)
           else
             lamp.render.names[i] = rendering.draw_text{
-              text= {type .. "-name." .. sigconfig[i].signal.name},
+              text= name,
               surface = lamp.entity.surface,
               target = lamp.entity,
               target_offset = { 0.5, -0.6 + i},
