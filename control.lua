@@ -244,7 +244,11 @@ end
 
 script.on_event(defines.events.on_tick, function()
   for _,lamp in pairs(global.lamps) do
-    on_tick_lamp(lamp)
+    if lamp.entity.valid then
+      on_tick_lamp(lamp)
+    else
+      global.lamps[_] = nil
+    end
   end
 end)
 
