@@ -83,31 +83,62 @@ function get_signal_from_set(signal,set)
   return nil
 end
 
+function get_signals_filtered(filters,signals)
+  --   filters = {
+  --  {signal=SignalID, type= ml_defines.datatype, hex=false},
+  --  }
+  local results = {}
+  local count = 0
+  for _,sig in pairs(signals) do
+    for i,f in pairs(filters) do
+      if sig.signal.type == f.signal.type and sig.signal.name == f.signal.name then
+        results[i] = sig.count
+        count = count + 1
+        if count == #filters then return results end
+      end
+    end
+  end
+  return results
+end
+
+
 function get_signal_bit_set(set)
   local sigbits = {}
-  for i=0,30 do
-    for _,sig in pairs(set) do
-      local sigbit = bit32.extract(sig.count,i)
-      if sigbit==1 then
-        sigbits[i+1] = sig.signal
-        break
+  local bitsleft = -1
+  for _,sig in ipairs(set) do
+    local newbits = bit32.band(sig.count,bitsleft)
+    if newbits ~= 0 then
+      for i=0,30 do
+        local sigbit = bit32.extract(newbits,i)
+        if sigbit==1 then
+          sigbits[i+1] = sig.signal
+          bitsleft = bit32.replace(bitsleft,0,i)
+          if bitsleft == 0 then
+            return sigbits
+          end
+        end
       end
     end
   end
   return sigbits
 end
 
-function on_tick_lamp(lamp)
-  if lamp.config.mode == ml_defines.configmode.numeric then
-    local sigconfig = lamp.config.numeric.signals
-    local signals = lamp.entity.get_merged_signals() or {}
 
-    for i=1,4 do
-      if sigconfig[i] and sigconfig[i].signal then
-        local value = get_signal_from_set(sigconfig[i].signal,signals) or 0
+function on_tick_numeric_lamp(lamp)
+  local sigconfig = lamp.config.numeric.signals
+  local signals = lamp.entity.get_merged_signals() or {}
 
-        local hex = sigconfig[i].hex
-        local type = sigconfig[i].type
+  local filteredsignals = get_signals_filtered(sigconfig, signals)
+
+  for i=1,4 do
+    local sigconfigi = sigconfig[i]
+    if sigconfigi and sigconfigi.signal then
+      local value = filteredsignals[i] or 0
+
+      if sigconfigi.lastvalue ~= value then
+        sigconfigi.lastvalue = value
+        local hex = sigconfigi.hex
+        local type = sigconfigi.type
         local format = hex and "0x%08x" or "%i"
         if type == ml_defines.datatype.signed and hex and value < 0 then
           -- negative hex
@@ -125,6 +156,7 @@ function on_tick_lamp(lamp)
           value = float_from_int(value)
           format = hex and "%a" or "%g"
         end
+
 
         if lamp.render.values[i] and rendering.is_valid(lamp.render.values[i]) then
           rendering.set_text(lamp.render.values[i], format:format(value))
@@ -144,10 +176,10 @@ function on_tick_lamp(lamp)
           local type = sigconfig[i].signal.type
           if type == "virtual" then type = "virtual-signal" end
           if lamp.render.icons[i] and rendering.is_valid(lamp.render.icons[i]) then
-            rendering.set_sprite(lamp.render.icons[i], type .. "/" .. sigconfig[i].signal.name)
+            rendering.set_sprite(lamp.render.icons[i], type .. "/" .. sigconfigi.signal.name)
           else
             lamp.render.icons[i] = rendering.draw_sprite{
-              sprite = type .. "/" .. sigconfig[i].signal.name,
+              sprite = type .. "/" .. sigconfigi.signal.name,
               surface = lamp.entity.surface,
               target = lamp.entity,
               target_offset = { 0, i},
@@ -188,66 +220,84 @@ function on_tick_lamp(lamp)
             lamp.render.names[i] = nil
           end
         end
-
-        --sigconfig[i] = {signal = nil, unsigned=false, hex=false, float=false
-      else
-        if lamp.render.names[i] and rendering.is_valid(lamp.render.names[i]) then
-          rendering.destroy(lamp.render.names[i])
-          lamp.render.names[i] = nil
-        end
-        if lamp.render.icons[i] and rendering.is_valid(lamp.render.icons[i]) then
-          rendering.destroy(lamp.render.icons[i])
-          lamp.render.icons[i] = nil
-        end
-        if lamp.render.values[i] and rendering.is_valid(lamp.render.values[i]) then
-          rendering.destroy(lamp.render.values[i])
-          lamp.render.values[i] = nil
-        end
       end
-    end
-
-
-  elseif lamp.config.mode == ml_defines.configmode.iconstrip then
-    local signals = lamp.entity.get_merged_signals() or {}
-    local bits = get_signal_bit_set(signals)
-    for i=1,31 do
-      if bits[i] then
-        local type = bits[i].type
-        if type == "virtual" then type = "virtual-signal" end
-        if lamp.render.iconstrip[i] and rendering.is_valid(lamp.render.iconstrip[i]) then
-          rendering.set_sprite(lamp.render.iconstrip[i], type .. "/" .. bits[i].name)
-        else
-          local pos = {0,1}
-          if lamp.config.iconstrip.endian == ml_defines.iconstrip_endian.lsb_left then
-            pos[1] =  -16 + i
-          else
-            pos[1] =  16 - i
-          end
-          lamp.render.iconstrip[i] = rendering.draw_sprite{
-            sprite = type .. "/" .. bits[i].name,
-            surface = lamp.entity.surface,
-            target = lamp.entity,
-            target_offset = pos,
-            tint = {r=1,g=1,b=1, a=0.6},
-          }
-        end
-      else
-        if lamp.render.iconstrip[i] and rendering.is_valid(lamp.render.iconstrip[i]) then
-          rendering.destroy(lamp.render.iconstrip[i])
-          lamp.render.iconstrip[i] = nil
-        end
+      --sigconfig[i] = {signal = nil, unsigned=false, hex=false, float=false
+    else
+      if lamp.render.names[i] and rendering.is_valid(lamp.render.names[i]) then
+        rendering.destroy(lamp.render.names[i])
+        lamp.render.names[i] = nil
+      end
+      if lamp.render.icons[i] and rendering.is_valid(lamp.render.icons[i]) then
+        rendering.destroy(lamp.render.icons[i])
+        lamp.render.icons[i] = nil
+      end
+      if lamp.render.values[i] and rendering.is_valid(lamp.render.values[i]) then
+        rendering.destroy(lamp.render.values[i])
+        lamp.render.values[i] = nil
       end
     end
   end
 end
 
+function on_tick_iconstrip_lamp(lamp)
+  local signals = lamp.entity.get_merged_signals() or {}
+  local bits = get_signal_bit_set(signals)
+  for i=1,31 do
+    if bits[i] then
+      local type = bits[i].type
+      if type == "virtual" then type = "virtual-signal" end
+      if lamp.render.iconstrip[i] and rendering.is_valid(lamp.render.iconstrip[i]) then
+        rendering.set_sprite(lamp.render.iconstrip[i], type .. "/" .. bits[i].name)
+      else
+        local pos = {0,1}
+        if lamp.config.iconstrip.endian == ml_defines.iconstrip_endian.lsb_left then
+          pos[1] =  -16 + i
+        else
+          pos[1] =  16 - i
+        end
+        lamp.render.iconstrip[i] = rendering.draw_sprite{
+          sprite = type .. "/" .. bits[i].name,
+          surface = lamp.entity.surface,
+          target = lamp.entity,
+          target_offset = pos,
+          tint = {r=1,g=1,b=1, a=0.6},
+        }
+      end
+    else
+      if lamp.render.iconstrip[i] and rendering.is_valid(lamp.render.iconstrip[i]) then
+        rendering.destroy(lamp.render.iconstrip[i])
+        lamp.render.iconstrip[i] = nil
+      end
+    end
+  end
+end
+
+function on_tick_lamp(lamp)
+  if lamp.config.mode == ml_defines.configmode.numeric then
+    on_tick_numeric_lamp(lamp)
+  elseif lamp.config.mode == ml_defines.configmode.iconstrip then
+    on_tick_iconstrip_lamp(lamp)
+  end
+end
+
 
 script.on_event(defines.events.on_tick, function()
-  for _,lamp in pairs(global.lamps) do
-    if lamp.entity.valid then
-      on_tick_lamp(lamp)
-    else
-      global.lamps[_] = nil
+  for _=1, settings.global["magic-lamp-updates-per-tick"].value do
+    local lamp
+    if global.next_lamp and not global.lamps[global.next_lamp] then
+      game.print("Invalid next_lamp " .. global.next_lamp)
+      global.next_lamp=nil
+    end
+
+    global.next_lamp,lamp = next(global.lamps,global.next_lamp)
+
+    if lamp then
+      if lamp.entity.valid then
+        on_tick_lamp(lamp)
+      else
+        global.lamps[global.next_lamp] = nil
+        global.next_lamp = nil
+      end
     end
   end
 end)
@@ -536,7 +586,9 @@ script.on_event(defines.events.on_gui_selection_state_changed, function(event)
     end
   elseif event.element.name == "magic_lamp.datatype" then
     local lamp = global.lamps[global.open[player.index]]
-    lamp.config.numeric.signals[tonumber(event.element.parent.name)].type = event.element.selected_index
+    local i = tonumber(event.element.parent.name)
+    lamp.config.numeric.signals[i].type = event.element.selected_index
+    lamp.config.numeric.signals[i].lastvalue = nil
     reload_gui_after_change(lamp.entity,player)
   end
 end)
@@ -547,10 +599,16 @@ script.on_event(defines.events.on_gui_checked_state_changed, function(event)
     local lamp = global.lamps[global.open[player.index]]
     lamp.config.numeric.icons = event.element.state
     reload_gui_after_change(lamp.entity,player)
+    for _,sig in pairs(lamp.config.numeric.signals) do
+      sig.lastvalue = nil
+    end
   elseif event.element.name == "magic_lamp.names" then
     local lamp = global.lamps[global.open[player.index]]
     lamp.config.numeric.names = event.element.state
     reload_gui_after_change(lamp.entity,player)
+    for _,sig in pairs(lamp.config.numeric.signals) do
+      sig.lastvalue = nil
+    end
   elseif event.element.name == "magic_lamp.hex" then
     local lamp = global.lamps[global.open[player.index]]
     local i = tonumber(event.element.parent.name)
@@ -562,6 +620,7 @@ script.on_event(defines.events.on_gui_checked_state_changed, function(event)
       }
     end
     sigconfig[i].hex = event.element.state
+    sigconfig[i].lastvalue = nil
     reload_gui_after_change(lamp.entity,player)
   end
 end)
@@ -579,6 +638,7 @@ script.on_event(defines.events.on_gui_elem_changed, function(event)
       }
     end
     sigconfig[i].signal = event.element.elem_value
+    sigconfig[i].lastvalue = nil
     reload_gui_after_change(lamp.entity,player)
   end
 end)
