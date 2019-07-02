@@ -74,15 +74,6 @@ function float_from_int(i)
   return sign * math.ldexp(bit32.bor(significand,0x00800000),exponent-23) --[[normal numbers]]
 end
 
-function get_signal_from_set(signal,set)
-  for _,sig in pairs(set) do
-    if sig.signal.type == signal.type and sig.signal.name == signal.name then
-      return sig.count
-    end
-  end
-  return nil
-end
-
 function get_signals_filtered(filters,signals)
   --   filters = {
   --  {signal=SignalID, type= ml_defines.datatype, hex=false},
@@ -91,7 +82,7 @@ function get_signals_filtered(filters,signals)
   local count = 0
   for _,sig in pairs(signals) do
     for i,f in pairs(filters) do
-      if sig.signal.type == f.signal.type and sig.signal.name == f.signal.name then
+      if f.signal and f.signal.name and sig.signal.type == f.signal.type and sig.signal.name == f.signal.name then
         results[i] = sig.count
         count = count + 1
         if count == #filters then return results end
