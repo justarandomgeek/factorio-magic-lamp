@@ -2,7 +2,8 @@ local ml_defines = {
   configmode = {
     numeric = 1,
     iconstrip = 2,
-    terminal = 3,
+    string = 3,
+
   },
   iconstrip_endian = {
     lsb_left = 1,
@@ -263,11 +264,18 @@ function on_tick_iconstrip_lamp(lamp)
   end
 end
 
+function on_tick_string_lamp(lamp)
+  local signals = lamp.entity.get_merged_signals() or {}
+
+end
+
 function on_tick_lamp(lamp)
   if lamp.config.mode == ml_defines.configmode.numeric then
     on_tick_numeric_lamp(lamp)
   elseif lamp.config.mode == ml_defines.configmode.iconstrip then
     on_tick_iconstrip_lamp(lamp)
+  elseif lamp.config.mode == ml_defines.configmode.string then
+    on_tick_iconstring_lamp(lamp)
   end
 end
 
@@ -440,7 +448,7 @@ function create_lamp_gui(entity,player)
     items = {
       {"magic-lamp.mode-numeric"},
       {"magic-lamp.mode-iconstrip"}, -- bitmask icon strip
-      --{"magic-lamp.mode-terminal"} -- terminal mode, utf8 strings on signals in feathernet order. offset with a header on something reserved,or just require block moves?
+      {"magic-lamp.mode-string"} -- string mode, utf32 strings on signals in prototype order
     },
     selected_index = mode
   }
@@ -449,9 +457,11 @@ function create_lamp_gui(entity,player)
     create_numeric_frame(flow,config.numeric)
   elseif mode==ml_defines.configmode.iconstrip then
     create_iconstrip_frame(flow,config.iconstrip)
+  -- no extra config in string mode
+  --elseif mode==ml_defines.configmode.string then
+  --  create_string_frame(flow,config.string)
   end
 
-  --TODO: mode 3/Terminal
   return flow
 end
 
