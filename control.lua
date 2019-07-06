@@ -36,8 +36,7 @@ script.on_init(function()
         icons = {...}
         names = {...}
         values = {...}
-        string = id
-
+        string = { id }
       }
     }
     ]]
@@ -264,9 +263,82 @@ function on_tick_iconstrip_lamp(lamp)
   end
 end
 
+
+--[[
+| bits | U+first   | U+last     | bytes | Byte_1   | Byte_2   | Byte_3   | Byte_4   |
++------+-----------+------------+-------+----------+----------+----------+----------+
+|   7  | U+0000    | U+007F     |   1   | 0xxxxxxx |          |          |          |
+|  11  | U+0080    | U+07FF     |   2   | 110xxxxx | 10xxxxxx |          |          |
+|  16  | U+0800    | U+FFFF     |   3   | 1110xxxx | 10xxxxxx | 10xxxxxx |          |
+|  21  | U+10000   | U+1FFFFF   |   4   | 11110xxx | 10xxxxxx | 10xxxxxx | 10xxxxxx |
++------+-----------+------------+-------+----------+----------+----------+----------+
+--]]
+-- convert an int to a string containing the encoded value
+function IntToUtf8(val)
+    --[[make everythign unsigned values...]]
+    if val < 0 then val = val + 0x100000000 end
+
+    -- emptystring for invalid characters
+    if val > 0x10FFFF or (val > 0xD800 and val < 0xDFFF) then return "" end
+
+    local prefix, firstmask, startshift
+
+    if val < 0x80 then
+        --[[1 byte]]
+        return string.char(val)
+    elseif val < 0x0800 then
+        --[[2 bytes]]
+        prefix = 0xc0
+        firstmask = 0x1f
+        startshift = 6
+    elseif val < 0x10000 then
+        --[[3 bytes]]
+        prefix = 0xe0
+        firstmask = 0x0f
+        startshift = 12
+    else
+        --[[4 bytes]]
+        prefix = 0xf0
+        firstmask = 0x07
+        startshift = 18
+    end
+
+    local s = {}
+    table.insert(s, string.char(bit32.bor(prefix, bit32.band(bit32.rshift(val,startshift),firstmask))))
+    for shift=startshift-6,0,-6 do
+        table.insert(s, string.char(bit32.bor(0x80, bit32.band(bit32.rshift(val,shift),0x3f))))
+    end
+    return table.concat(s)
+end
+
 function on_tick_string_lamp(lamp)
   local signals = lamp.entity.get_merged_signals() or {}
+  local message = {}
+  for _,sig in pairs(signals) do
+    message[#message+1] = IntToUtf8(sig.count)
+  end
 
+  local newstring = table.concat(message)
+
+  log(serpent.dump(newstring))
+
+  if lamp.laststring == nil or lamp.laststring ~= newstring then
+    lamp.laststring = newstring
+    -- render.string is a table to make reset logic happy. makes it easy to split long strings to multiple lines in the future too...
+    if lamp.render.string[1] and rendering.is_valid(lamp.render.string[1]) then
+      rendering.set_text(lamp.render.string[1], newstring)
+    else
+      lamp.render.string[1] = rendering.draw_text{
+        text = {"", newstring},
+        surface = lamp.entity.surface,
+        target = lamp.entity,
+        target_offset = {0,0.6},
+        color = {r=1,g=1,b=1, a=0.6},
+        alignment = "center",
+        font = "default-mono"
+      }
+    end
+  end
 end
 
 function on_tick_lamp(lamp)
@@ -275,7 +347,7 @@ function on_tick_lamp(lamp)
   elseif lamp.config.mode == ml_defines.configmode.iconstrip then
     on_tick_iconstrip_lamp(lamp)
   elseif lamp.config.mode == ml_defines.configmode.string then
-    on_tick_iconstring_lamp(lamp)
+    on_tick_string_lamp(lamp)
   end
 end
 
@@ -325,6 +397,7 @@ script.on_event({defines.events.on_robot_built_entity,defines.events.on_built_en
         names = {},
         values = {},
         iconstrip = {},
+        string = {},
       }
     }
     --read config from CC if valid, clear if not
@@ -570,9 +643,21 @@ script.on_event(defines.events.on_gui_selection_state_changed, function(event)
         if rendering.is_valid(id) then
           rendering.destroy(id)
         end
-        lamp.render.names[i] = nil
       end
     end
+    lamp.render = {
+      icons = {},
+      names = {},
+      values = {},
+      iconstrip = {},
+      string = {},
+    }
+    if lamp.config.mode == ml_defines.configmode.numeric then
+       for _,sig in pairs(lamp.config.numeric.signals) do
+         sig.lastvalue = nil
+       end
+    end
+    lamp.config.laststring = nil
 
   elseif event.element.name == "magic_lamp.endian" then
     local lamp = global.lamps[global.open[player.index]]
