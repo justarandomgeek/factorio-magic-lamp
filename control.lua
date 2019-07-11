@@ -319,9 +319,6 @@ function on_tick_string_lamp(lamp)
   end
 
   local newstring = table.concat(message)
-
-  log(serpent.dump(newstring))
-
   if lamp.laststring == nil or lamp.laststring ~= newstring then
     lamp.laststring = newstring
     -- render.string is a table to make reset logic happy. makes it easy to split long strings to multiple lines in the future too...
