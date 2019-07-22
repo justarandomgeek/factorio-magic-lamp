@@ -50,6 +50,23 @@ script.on_init(function()
   }
 end)
 
+script.on_configuration_changed(function()
+  local protos = {
+    virtual = game.virtual_signal_prototypes,
+    item = game.item_prototypes,
+    fluid = game.fluid_prototypes,
+  }
+  for _,lamp in pairs(global.lamps) do
+    if lamp.config.numeric and lamp.config.numeric.signals then
+      for i,sig in pairs(lamp.config.numeric.signals) do
+        if sig.signal and (not protos[sig.signal.type] or not protos[sig.signal.type][sig.signal.name]) then
+          sig.signal = nil
+        end
+      end
+    end
+  end
+end)
+
 function float_from_int(i)
   local sign = bit32.btest(i,0x80000000) and -1 or 1
   local exponent = bit32.rshift(bit32.band(i,0x7F800000),23)-127
