@@ -67,7 +67,7 @@ script.on_configuration_changed(function()
   end
 end)
 
-function float_from_int(i)
+local function float_from_int(i)
   local sign = bit32.btest(i,0x80000000) and -1 or 1
   local exponent = bit32.rshift(bit32.band(i,0x7F800000),23)-127
   local significand = bit32.band(i,0x007FFFFF)
@@ -91,18 +91,19 @@ function float_from_int(i)
   return sign * math.ldexp(bit32.bor(significand,0x00800000),exponent-23) --[[normal numbers]]
 end
 
-function get_signals_filtered(filters,signals)
+local function get_signals_filtered(filters,signals)
   --   filters = {
-  --  {signal=SignalID, type= ml_defines.datatype, hex=false},
+  --  SignalID,
+  --  ...
   --  }
   local results = {}
   local count = 0
   for _,sig in pairs(signals) do
     for i,f in pairs(filters) do
-      if f.signal and f.signal.name and sig.signal.type == f.signal.type and sig.signal.name == f.signal.name then
+      if sig.signal.type == f.type and sig.signal.name == f.name then
         results[i] = sig.count
-        count = count + 1
-        if count == #filters then return results end
+        filters[i] = nil
+        if table_size(filters) == 0 then return results end
       end
     end
   end
@@ -110,7 +111,7 @@ function get_signals_filtered(filters,signals)
 end
 
 
-function get_signal_bit_set(set)
+local function get_signal_bit_set(set)
   local sigbits = {}
   local bitsleft = -1
   for _,sig in ipairs(set) do
@@ -132,11 +133,18 @@ function get_signal_bit_set(set)
 end
 
 
-function on_tick_numeric_lamp(lamp)
+local function on_tick_numeric_lamp(lamp)
   local sigconfig = lamp.config.numeric.signals
   local signals = lamp.entity.get_merged_signals() or {}
+  local filters = {}
+  for i = 1,4 do
+    local sigconfigi = sigconfig[i]
+    if sigconfigi and sigconfigi.signal then
+      filters[i] = sigconfigi.signal
+    end
+  end
 
-  local filteredsignals = get_signals_filtered(sigconfig, signals)
+  local filteredsignals = get_signals_filtered(filters, signals)
 
   for i=1,4 do
     local sigconfigi = sigconfig[i]
@@ -247,7 +255,7 @@ function on_tick_numeric_lamp(lamp)
   end
 end
 
-function on_tick_iconstrip_lamp(lamp)
+local function on_tick_iconstrip_lamp(lamp)
   local signals = lamp.entity.get_merged_signals() or {}
   local bits = get_signal_bit_set(signals)
   for i=1,31 do
@@ -291,7 +299,7 @@ end
 +------+-----------+------------+-------+----------+----------+----------+----------+
 --]]
 -- convert an int to a string containing the encoded value
-function IntToUtf8(val)
+local function IntToUtf8(val)
     --[[make everythign unsigned values...]]
     if val < 0 then val = val + 0x100000000 end
 
@@ -328,7 +336,7 @@ function IntToUtf8(val)
     return table.concat(s)
 end
 
-function on_tick_string_lamp(lamp)
+local function on_tick_string_lamp(lamp)
   local signals = lamp.entity.get_merged_signals() or {}
   local message = {}
   for _,sig in pairs(signals) do
@@ -355,13 +363,16 @@ function on_tick_string_lamp(lamp)
   end
 end
 
-function on_tick_lamp(lamp)
-  if lamp.config.mode == ml_defines.configmode.numeric then
-    on_tick_numeric_lamp(lamp)
-  elseif lamp.config.mode == ml_defines.configmode.iconstrip then
-    on_tick_iconstrip_lamp(lamp)
-  elseif lamp.config.mode == ml_defines.configmode.string then
-    on_tick_string_lamp(lamp)
+local lamp_handlers = {
+  [ml_defines.configmode.numeric] = on_tick_numeric_lamp,
+  [ml_defines.configmode.iconstrip] = on_tick_iconstrip_lamp,
+  [ml_defines.configmode.string] = on_tick_string_lamp,
+}
+
+local function on_tick_lamp(lamp)
+  local f = lamp_handlers[lamp.config.mode]
+  if f then 
+    f(lamp)
   end
 end
 
@@ -370,7 +381,6 @@ script.on_event(defines.events.on_tick, function()
   for _=1, settings.global["magic-lamp-updates-per-tick"].value do
     local lamp
     if global.next_lamp and not global.lamps[global.next_lamp] then
-      game.print("Invalid next_lamp " .. global.next_lamp)
       global.next_lamp=nil
     end
 
@@ -383,6 +393,8 @@ script.on_event(defines.events.on_tick, function()
         global.lamps[global.next_lamp] = nil
         global.next_lamp = nil
       end
+    else
+      return
     end
   end
 end)
@@ -425,7 +437,7 @@ script.on_event({defines.events.on_entity_died, defines.events.on_robot_mined_en
   end
 end)
 
-function create_iconstrip_frame(flow,stripconfig)
+local function create_iconstrip_frame(flow,stripconfig)
   local frame = flow.add{
       type = 'frame',
       name = "iconstrip_frame",
@@ -445,7 +457,7 @@ function create_iconstrip_frame(flow,stripconfig)
 end
 
 
-function create_signal_frame(numframe,sigconfig,i)
+local function create_signal_frame(numframe,sigconfig,i)
 
   if not sigconfig then
     sigconfig = { type = ml_defines.datatype.signed, hex = false }
@@ -483,7 +495,7 @@ function create_signal_frame(numframe,sigconfig,i)
   }
 end
 
-function create_numeric_frame(flow,numconfig)
+local function create_numeric_frame(flow,numconfig)
   local numframe = flow.add{
       type = 'frame',
       name = "numeric_frame",
@@ -511,7 +523,7 @@ function create_numeric_frame(flow,numconfig)
   end
 end
 
-function create_lamp_gui(entity,player)
+local function create_lamp_gui(entity,player)
   local config = global.lamps[entity.unit_number].config
 
   local flow = player.gui.center.add{
@@ -552,7 +564,7 @@ function create_lamp_gui(entity,player)
   return flow
 end
 
-function write_config_to_cc(entity)
+local function write_config_to_cc(entity)
   local config = global.lamps[entity.unit_number].config
   local control = entity.get_or_create_control_behavior()
 
@@ -593,7 +605,7 @@ function write_config_to_cc(entity)
 
 end
 
-function read_config_from_cc(entity)
+local function read_config_from_cc(entity)
   local config = global.lamps[entity.unit_number].config
   local control = entity.get_or_create_control_behavior()
 
@@ -630,7 +642,7 @@ function read_config_from_cc(entity)
 end
 
 
-function reload_gui_after_change(entity,player)
+local function reload_gui_after_change(entity,player)
   write_config_to_cc(entity)
   player.opened.destroy()
   player.opened = create_lamp_gui(entity,player)
