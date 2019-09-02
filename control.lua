@@ -91,25 +91,41 @@ local function float_from_int(i)
   return sign * math.ldexp(bit32.bor(significand,0x00800000),exponent-23) --[[normal numbers]]
 end
 
-local function get_signals_filtered(filters,signals)
+local function get_signals_filtered_raw(filters,entity)
   --   filters = {
   --  SignalID,
   --  ...
   --  }
+  local red = entity.get_circuit_network(defines.wire_type.red)
+  local get_red_signal = red and red.get_signal
+  local green = entity.get_circuit_network(defines.wire_type.green)
+  local get_green_signal = green and green.get_signal
   local results = {}
-  local count = 0
-  for _,sig in pairs(signals) do
-    for i,f in pairs(filters) do
-      if sig.signal.type == f.type and sig.signal.name == f.name then
-        results[i] = sig.count
-        filters[i] = nil
-        if table_size(filters) == 0 then return results end
-      end
+  if not red and not green then return results end
+  for i,f in pairs(filters) do
+    results[i] = 0
+    if get_red_signal then 
+      results[i] =  results[i] + get_red_signal(f) 
+    end
+    if get_green_signal then 
+      results[i] =  results[i] + get_green_signal(f) 
     end
   end
   return results
 end
 
+local function get_signals_filtered_native(filters,entity)
+  --   filters = {
+  --  SignalID,
+  --  ...
+  --  }
+  local results = {}
+  local get_signal = entity.get_merged_signal
+  for i,f in pairs(filters) do
+    results[i] = get_signal(f)
+  end
+  return results
+end
 
 local function get_signal_bit_set(set)
   local sigbits = {}
@@ -132,10 +148,8 @@ local function get_signal_bit_set(set)
   return sigbits
 end
 
-
 local function on_tick_numeric_lamp(lamp)
   local sigconfig = lamp.config.numeric.signals
-  local signals = lamp.entity.get_merged_signals() or {}
   local filters = {}
   for i = 1,4 do
     local sigconfigi = sigconfig[i]
@@ -144,7 +158,7 @@ local function on_tick_numeric_lamp(lamp)
     end
   end
 
-  local filteredsignals = get_signals_filtered(filters, signals)
+  local filteredsignals = get_signals_filtered_raw(filters, lamp.entity)
 
   for i=1,4 do
     local sigconfigi = sigconfig[i]
@@ -334,6 +348,83 @@ local function IntToUtf8(val)
         table.insert(s, string.char(bit32.bor(0x80, bit32.band(bit32.rshift(val,shift),0x3f))))
     end
     return table.concat(s)
+end
+
+local function write_config_to_cc(entity)
+  local config = global.lamps[entity.unit_number].config
+  local control = entity.get_or_create_control_behavior()
+
+  local frame = {}
+  frame[1] = {index = #frame+1, signal = {type="virtual", name="signal-dot"}, count = config.mode }
+  if config.mode == ml_defines.configmode.numeric then
+    if config.numeric then
+      if config.numeric.icons then
+        frame[1].count = frame[1].count + 0x40000000
+      end
+      if config.numeric.names then
+        frame[1].count = frame[1].count + 0x20000000
+      end
+      if config.numeric.signals then
+        for i=1,4 do
+          if config.numeric.signals[i] then
+            local count = config.numeric.signals[i].type
+            if config.numeric.signals[i].hex then
+              count = count + 0x40000000
+            end
+            frame[i+1] = {index = #frame+1, signal = config.numeric.signals[i].signal, count = count }
+          else
+            frame[i+1] = {index = #frame+1, signal = nil, count = 0 }
+          end
+        end
+      end
+    end
+  elseif config.mode == ml_defines.configmode.iconstrip then
+    if config.iconstrip then
+      if config.iconstrip.endian == ml_defines.iconstrip_endian.lsb_right then
+        frame[1].count = frame[1].count + 0x40000000
+      end
+    end
+  end
+
+  control.enabled = false
+  control.parameters = {parameters = frame}
+
+end
+
+local function read_config_from_cc(entity)
+  local config = global.lamps[entity.unit_number].config
+  local control = entity.get_or_create_control_behavior()
+
+  if not control.enabled then
+    local frame = control.parameters.parameters
+
+    if frame[1].signal.type == "virtual" and frame[1].signal.name == "signal-dot" then
+      local mode = frame[1].count % 0x100
+      if mode == ml_defines.configmode.numeric then
+        config.mode = ml_defines.configmode.numeric
+        config.numeric.icons = (bit32.band(frame[1].count, 0x40000000) ~= 0)
+        config.numeric.names = (bit32.band(frame[1].count, 0x20000000) ~= 0)
+        for i=1,4 do
+          if frame[i+1].signal.name then
+            config.numeric.signals[i].signal = frame[i+1].signal
+            config.numeric.signals[i].type = frame[i+1].count % 0x100
+            if config.numeric.signals[i].type > ml_defines.datatype.float or config.numeric.signals[i].type < ml_defines.datatype.signed then
+              config.numeric.signals[i].type = ml_defines.datatype.signed
+            end
+            config.numeric.signals[i].hex = (bit32.band(frame[i+1].count, 0x40000000) ~= 0)
+          end
+        end
+      elseif mode == ml_defines.configmode.iconstrip then
+        if bit32.band(frame[1].count, 0x40000000) ~= 0 then
+          config.iconstrip.endian = ml_defines.iconstrip_endian.lsb_right
+        else
+          config.iconstrip.endian = ml_defines.iconstrip_endian.lsb_left
+        end
+      end
+    end
+  end
+  -- and write it back in case any of it was invalid...
+  write_config_to_cc(entity)
 end
 
 local function on_tick_string_lamp(lamp)
@@ -564,84 +655,6 @@ local function create_lamp_gui(entity,player)
   return flow
 end
 
-local function write_config_to_cc(entity)
-  local config = global.lamps[entity.unit_number].config
-  local control = entity.get_or_create_control_behavior()
-
-  local frame = {}
-  frame[1] = {index = #frame+1, signal = {type="virtual", name="signal-dot"}, count = config.mode }
-  if config.mode == ml_defines.configmode.numeric then
-    if config.numeric then
-      if config.numeric.icons then
-        frame[1].count = frame[1].count + 0x40000000
-      end
-      if config.numeric.names then
-        frame[1].count = frame[1].count + 0x20000000
-      end
-      if config.numeric.signals then
-        for i=1,4 do
-          if config.numeric.signals[i] then
-            local count = config.numeric.signals[i].type
-            if config.numeric.signals[i].hex then
-              count = count + 0x40000000
-            end
-            frame[i+1] = {index = #frame+1, signal = config.numeric.signals[i].signal, count = count }
-          else
-            frame[i+1] = {index = #frame+1, signal = nil, count = 0 }
-          end
-        end
-      end
-    end
-  elseif config.mode == ml_defines.configmode.iconstrip then
-    if config.iconstrip then
-      if config.iconstrip.endian == ml_defines.iconstrip_endian.lsb_right then
-        frame[1].count = frame[1].count + 0x40000000
-      end
-    end
-  end
-
-  control.enabled = false
-  control.parameters = {parameters = frame}
-
-end
-
-local function read_config_from_cc(entity)
-  local config = global.lamps[entity.unit_number].config
-  local control = entity.get_or_create_control_behavior()
-
-  if not control.enabled then
-    local frame = control.parameters.parameters
-
-    if frame[1].signal.type == "virtual" and frame[1].signal.name == "signal-dot" then
-      local mode = frame[1].count % 0x100
-      if mode == ml_defines.configmode.numeric then
-        config.mode = ml_defines.configmode.numeric
-        config.numeric.icons = (bit32.band(frame[1].count, 0x40000000) ~= 0)
-        config.numeric.names = (bit32.band(frame[1].count, 0x20000000) ~= 0)
-        for i=1,4 do
-          if frame[i+1].signal.name then
-            config.numeric.signals[i].signal = frame[i+1].signal
-            config.numeric.signals[i].type = frame[i+1].count % 0x100
-            if config.numeric.signals[i].type > ml_defines.datatype.float or config.numeric.signals[i].type < ml_defines.datatype.signed then
-              config.numeric.signals[i].type = ml_defines.datatype.signed
-            end
-            config.numeric.signals[i].hex = (bit32.band(frame[i+1].count, 0x40000000) ~= 0)
-          end
-        end
-      elseif mode == ml_defines.configmode.iconstrip then
-        if bit32.band(frame[1].count, 0x40000000) ~= 0 then
-          config.iconstrip.endian = ml_defines.iconstrip_endian.lsb_right
-        else
-          config.iconstrip.endian = ml_defines.iconstrip_endian.lsb_left
-        end
-      end
-    end
-  end
-  -- and write it back in case any of it was invalid...
-  write_config_to_cc(entity)
-end
-
-
 local function reload_gui_after_change(entity,player)
   write_config_to_cc(entity)
   player.opened.destroy()
@@ -757,7 +770,7 @@ end)
 
 
 script.on_event(defines.events.on_gui_closed, function(event)
-  local player = game.players[event.player_index]
+  local player = game.get_player(event.player_index)
   local frame = event.element
   if event.gui_type == defines.gui_type.custom and frame and frame.valid and frame.name == "magic_lamp" then
     global.open[player.index] = nil
@@ -773,4 +786,17 @@ script.on_event(defines.events.on_entity_settings_pasted, function(event)
     --  restore config
     write_config_to_cc(event.destination)
   end
+end)
+
+script.on_event(defines.events.on_player_configured_blueprint, function(event)
+  local player = game.get_player(event.player_index)
+  
+  -- if this is from a selection just made, try to match up magic lamps with last selection box and tag them
+  log("configured")
+  log(serpent.block(event))
+end)
+
+script.on_event(defines.events.on_player_setup_blueprint, function(event)
+  log("setup")
+  log(serpent.block(event))
 end)
