@@ -91,30 +91,7 @@ local function float_from_int(i)
   return sign * math.ldexp(bit32.bor(significand,0x00800000),exponent-23) --[[normal numbers]]
 end
 
-local function get_signals_filtered_raw(filters,entity)
-  --   filters = {
-  --  SignalID,
-  --  ...
-  --  }
-  local red = entity.get_circuit_network(defines.wire_type.red)
-  local get_red_signal = red and red.get_signal
-  local green = entity.get_circuit_network(defines.wire_type.green)
-  local get_green_signal = green and green.get_signal
-  local results = {}
-  if not red and not green then return results end
-  for i,f in pairs(filters) do
-    results[i] = 0
-    if get_red_signal then 
-      results[i] =  results[i] + get_red_signal(f) 
-    end
-    if get_green_signal then 
-      results[i] =  results[i] + get_green_signal(f) 
-    end
-  end
-  return results
-end
-
-local function get_signals_filtered_native(filters,entity)
+local function get_signals_filtered(filters,entity)
   --   filters = {
   --  SignalID,
   --  ...
@@ -158,7 +135,7 @@ local function on_tick_numeric_lamp(lamp)
     end
   end
 
-  local filteredsignals = get_signals_filtered_raw(filters, lamp.entity)
+  local filteredsignals = get_signals_filtered(filters, lamp.entity)
 
   for i=1,4 do
     local sigconfigi = sigconfig[i]
@@ -406,6 +383,7 @@ local function read_config_from_cc(entity)
         config.numeric.names = (bit32.band(frame[1].count, 0x20000000) ~= 0)
         for i=1,4 do
           if frame[i+1].signal.name then
+            config.numeric.signals[i].lastvalue = nil
             config.numeric.signals[i].signal = frame[i+1].signal
             config.numeric.signals[i].type = frame[i+1].count % 0x100
             if config.numeric.signals[i].type > ml_defines.datatype.float or config.numeric.signals[i].type < ml_defines.datatype.signed then
