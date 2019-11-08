@@ -447,12 +447,11 @@ end
 
 
 script.on_event(defines.events.on_tick, function()
+  if global.next_lamp and not global.lamps[global.next_lamp] then
+    global.next_lamp=nil
+  end
   for _=1, settings.global["magic-lamp-updates-per-tick"].value do
     local lamp
-    if global.next_lamp and not global.lamps[global.next_lamp] then
-      global.next_lamp=nil
-    end
-
     global.next_lamp,lamp = next(global.lamps,global.next_lamp)
 
     if lamp then
