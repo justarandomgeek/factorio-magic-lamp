@@ -1,4 +1,4 @@
-function copyPrototype(type, name, newName)
+local function copyPrototype(type, name, newName)
   if not data.raw[type][name] then error("type "..type.." "..name.." doesn't exist") end
   local p = table.deepcopy(data.raw[type][name])
   p.name = newName
@@ -22,8 +22,8 @@ function copyPrototype(type, name, newName)
 end
 
 
-magic_lamp_item = copyPrototype("item","constant-combinator","magic-lamp")
-magic_lamp_entity = copyPrototype("constant-combinator","constant-combinator","magic-lamp")
+local magic_lamp_item = copyPrototype("item","constant-combinator","magic-lamp")
+local magic_lamp_entity = copyPrototype("constant-combinator","constant-combinator","magic-lamp")
 
 -- Common tech with Utility Combinators and Optera's Inventory Sensor
 if data.raw["technology"]["circuit-network-2"] then
