@@ -1,4 +1,3 @@
-if script.active_mods['debugadapter'] then require('__debugadapter__/debugadapter.lua') end
 local ml_defines = {
   configmode = {
     numeric = 1,
