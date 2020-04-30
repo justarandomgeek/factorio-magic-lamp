@@ -769,6 +769,11 @@ local function on_destroying_entity(entity)
     if global.next_lamp == entity.unit_number then
       global.next_lamp = nil
     end
+    for i,player in pairs(game.players) do
+      if global.open[player.index] == entity.unit_number then
+        player.opened.destroy()
+      end
+    end
   end
 end
 
