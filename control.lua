@@ -553,10 +553,10 @@ local function create_numeric_frame(flow,numconfig)
   end
 end
 
-local function create_lamp_gui(entity,player)
+local function create_lamp_gui(entity,player,at_position)
   local config = global.lamps[entity.unit_number].config
 
-  local flow = player.gui.center.add{
+  local flow = player.gui.screen.add{
       type = 'frame',
       name = "magic_lamp",
       caption = {"entity-name.magic-lamp"},
@@ -591,13 +591,19 @@ local function create_lamp_gui(entity,player)
   --  create_string_frame(flow,config.string)
   end
 
+  if at_position then
+    flow.location = at_position
+  else
+    flow.force_auto_center()
+  end
   return flow
 end
 
 local function reload_gui_after_change(entity,player)
   write_config_to_cc(entity)
+  local at_location = player.opened.location
   player.opened.destroy()
-  player.opened = create_lamp_gui(entity,player)
+  player.opened = create_lamp_gui(entity,player,at_location)
 end
 
 script.on_event(defines.events.on_gui_opened, function(event)
