@@ -1,3 +1,5 @@
+require("util")
+
 local ml_defines = {
   configmode = {
     numeric = 1,
@@ -723,22 +725,86 @@ script.on_event(defines.events.on_gui_closed, function(event)
   end
 end)
 
+local function strip_and_validate_config(config)
+  local protos = {
+    virtual = game.virtual_signal_prototypes,
+    item = game.item_prototypes,
+    fluid = game.fluid_prototypes,
+  }
+
+  if not config.mode then
+    config.mode = ml_defines.configmode.numeric
+  end
+  if not config.iconstrip then
+    config.iconstrip = {endian = ml_defines.iconstrip_endian.lsb_left, numeric=true}
+  end
+
+  if not config.numeric then
+    config.numeric = {
+      icons = true,
+      names = false,
+      signals = {
+        {type=ml_defines.datatype.signed, hex=false},
+        {type=ml_defines.datatype.signed, hex=false},
+        {type=ml_defines.datatype.signed, hex=false},
+        {type=ml_defines.datatype.signed, hex=false},
+      },
+    }
+  elseif not config.numeric.signals then
+    config.numeric.signals = {
+      {type=ml_defines.datatype.signed, hex=false},
+      {type=ml_defines.datatype.signed, hex=false},
+      {type=ml_defines.datatype.signed, hex=false},
+      {type=ml_defines.datatype.signed, hex=false},
+    }
+  else
+    for _,sig in pairs(config.numeric.signals) do
+      -- strip cached values
+      sig.lastvalue = nil
+      -- validate signal type
+      if sig.signal and (not protos[sig.signal.type] or not protos[sig.signal.type][sig.signal.name]) then
+        sig.signal = nil
+      end
+    end
+  end
+end
+
 script.on_event(defines.events.on_entity_settings_pasted, function(event)
-  if event.source.name == "magic-lamp" and event.destination.name== "magic-lamp" then
-    -- read config from CC if valid, restore if not
-    read_config_from_cc(event.destination)
-  elseif event.destination.name== "magic-lamp" then
-    --  restore config
+  if event.destination.name== "magic-lamp" then
+    if event.source.name == "magic-lamp" then
+      -- transfer config
+      local config = table.deepcopy(global.lamps[event.source.unit_number].config)
+      strip_and_validate_config(config)
+      global.lamps[event.destination.unit_number].config = config
+    end
+    -- ensure CC is correct after paste
     write_config_to_cc(event.destination)
   end
 end)
 
 script.on_event(defines.events.on_player_setup_blueprint, function(event)
-
+  local player = game.get_player(event.player_index)
+  local mapping = event.mapping.get()
+  local blueprint = player.blueprint_to_setup
+  if not blueprint.valid_for_read then
+    blueprint = player.cursor_stack
+  end
+  local bpentities = blueprint.get_blueprint_entities()
+  for i,bpent in pairs(bpentities) do
+    if bpent.name == "magic-lamp" and mapping[i] and mapping[i].name == "magic-lamp" then
+      local config = table.deepcopy(global.lamps[mapping[i].unit_number].config)
+      strip_and_validate_config(config)
+      local tag = {
+        version = 1,
+        config = config
+      }
+      blueprint.set_blueprint_entity_tag(i,"magic-lamp",tag)
+    end
+  end
 end)
 
 
-local function on_built_entity(entity,cloned_from)
+local function on_built_entity(entity,cloned_from,tags)
   if entity.name == "magic-lamp" then
     global.lamps[entity.unit_number] = {
       entity = entity,
@@ -764,22 +830,56 @@ local function on_built_entity(entity,cloned_from)
         string = {},
       }
     }
+    if cloned_from then
+      global.lamps[entity.unit_number].config = table.deepcopy(global.lamps[cloned_from.unit_number].config)
+      return
+    end
+    if tags then
+      local mltag = tags["magic-lamp"]
+      if mltag then
+        if mltag.version == 1 then
+          local config = mltag.config
+          strip_and_validate_config(config)
+          global.lamps[entity.unit_number].config = config
+          write_config_to_cc(entity)
+          return
+        else
+          -- invalid version in print? ignore it until there's migration to do...
+        end
+      end
+    end
     --read config from CC if valid, clear if not
     read_config_from_cc(entity)
   end
 end
 
+local function cleanup_lamp(unit_number)
+  global.lamps[unit_number] = nil
+  if global.next_lamp == unit_number then
+    global.next_lamp = nil
+  end
+  for i,player in pairs(game.players) do
+    if global.open[player.index] == unit_number then
+      player.opened.destroy()
+    end
+  end
+end
+
 local function on_destroying_entity(entity)
   if entity.name == "magic-lamp" then
-    global.lamps[entity.unit_number] = nil
-    if global.next_lamp == entity.unit_number then
-      global.next_lamp = nil
-    end
-    for i,player in pairs(game.players) do
-      if global.open[player.index] == entity.unit_number then
-        player.opened.destroy()
-      end
-    end
+    cleanup_lamp(entity.unit_number)
+  end
+end
+
+local function on_post_entity_died(ghost,unit_number)
+  if ghost.ghost_name == "magic-lamp" then
+    local tags = ghost.tags or {}
+    tags["magic-lamp"] = {
+      version = 1,
+      config = global.lamps[unit_number].config
+    }
+    ghost.tags = tags
+    cleanup_lamp(unit_number)
   end
 end
 
@@ -787,17 +887,21 @@ local filters = {
   {filter="name",name="magic-lamp"},
 }
 
-script.on_event(defines.events.on_built_entity, function(event) on_built_entity(event.created_entity) end, filters)
-script.on_event(defines.events.on_robot_built_entity, function(event) on_built_entity(event.created_entity) end, filters)
-script.on_event(defines.events.script_raised_built, function(event) on_built_entity(event.entity) end)
-script.on_event(defines.events.script_raised_revive, function(event) on_built_entity(event.entity) end)
+script.on_event(defines.events.on_built_entity, function(event) on_built_entity(event.created_entity,nil,event.tags) end, filters)
+script.on_event(defines.events.on_robot_built_entity, function(event) on_built_entity(event.created_entity,nil,event.tags) end, filters)
+script.on_event(defines.events.script_raised_built, function(event) on_built_entity(event.entity,nil,event.tags) end)
+script.on_event(defines.events.script_raised_revive, function(event) on_built_entity(event.entity,nil,event.tags) end)
 
 script.on_event(defines.events.on_entity_cloned, function(event) on_built_entity(event.destination,event.source) end)
 
 script.on_event(defines.events.on_pre_player_mined_item, function(event) on_destroying_entity(event.entity) end, filters)
 script.on_event(defines.events.on_robot_pre_mined, function(event) on_destroying_entity(event.entity) end, filters)
-script.on_event(defines.events.on_entity_died, function(event) on_destroying_entity(event.entity) end, filters)
 script.on_event(defines.events.script_raised_destroy, function(event) on_destroying_entity(event.entity) end)
+
+script.on_event(defines.events.on_post_entity_died, function(event) on_post_entity_died(event.ghost,event.unit_number) end,
+{{filter="type",type="constant-combinator"}})
+
+
 script.on_event(defines.events.on_pre_chunk_deleted, function(event)
   for _,chunk in pairs(event.positions) do
     local x = chunk.x
