@@ -467,44 +467,6 @@ script.on_event(defines.events.on_tick, function()
   end
 end)
 
-script.on_event({defines.events.on_robot_built_entity,defines.events.on_built_entity}, function(event)
-  local entity = event.created_entity
-  if entity.name == "magic-lamp" then
-    global.lamps[entity.unit_number] = {
-      entity = entity,
-      config = {
-        mode = ml_defines.configmode.numeric,
-        iconstrip = {endian = ml_defines.iconstrip_endian.lsb_left, numeric=true},
-        numeric = {
-          icons = true,
-          names = false,
-          signals = {
-            {type=ml_defines.datatype.signed, hex=false},
-            {type=ml_defines.datatype.signed, hex=false},
-            {type=ml_defines.datatype.signed, hex=false},
-            {type=ml_defines.datatype.signed, hex=false},
-          },
-        },
-      },
-      render = {
-        icons = {},
-        names = {},
-        values = {},
-        iconstrip = {},
-        string = {},
-      }
-    }
-    --read config from CC if valid, clear if not
-    read_config_from_cc(entity)
-  end
-end)
-script.on_event({defines.events.on_entity_died, defines.events.on_robot_mined_entity,defines.events.on_player_mined_entity}, function(event)
-  local entity = event.entity
-  if entity.name == "magic-lamp" then
-    global.lamps[entity.unit_number] = nil
-  end
-end)
-
 local function create_iconstrip_frame(flow,stripconfig)
   local frame = flow.add{
       type = 'frame',
@@ -765,15 +727,83 @@ script.on_event(defines.events.on_entity_settings_pasted, function(event)
   end
 end)
 
-script.on_event(defines.events.on_player_configured_blueprint, function(event)
-  local player = game.get_player(event.player_index)
-  
-  -- if this is from a selection just made, try to match up magic lamps with last selection box and tag them
-  log("configured")
-  log(serpent.block(event))
+script.on_event(defines.events.on_player_setup_blueprint, function(event)
+
 end)
 
-script.on_event(defines.events.on_player_setup_blueprint, function(event)
-  log("setup")
-  log(serpent.block(event))
+
+local function on_built_entity(entity,cloned_from)
+  if entity.name == "magic-lamp" then
+    global.lamps[entity.unit_number] = {
+      entity = entity,
+      config = {
+        mode = ml_defines.configmode.numeric,
+        iconstrip = {endian = ml_defines.iconstrip_endian.lsb_left, numeric=true},
+        numeric = {
+          icons = true,
+          names = false,
+          signals = {
+            {type=ml_defines.datatype.signed, hex=false},
+            {type=ml_defines.datatype.signed, hex=false},
+            {type=ml_defines.datatype.signed, hex=false},
+            {type=ml_defines.datatype.signed, hex=false},
+          },
+        },
+      },
+      render = {
+        icons = {},
+        names = {},
+        values = {},
+        iconstrip = {},
+        string = {},
+      }
+    }
+    --read config from CC if valid, clear if not
+    read_config_from_cc(entity)
+  end
+end
+
+local function on_destroying_entity(entity)
+  if entity.name == "magic-lamp" then
+    global.lamps[entity.unit_number] = nil
+    if global.next_lamp == entity.unit_number then
+      global.next_lamp = nil
+    end
+  end
+end
+
+local filters = {
+  {filter="name",name="magic-lamp"},
+}
+
+script.on_event(defines.events.on_built_entity, function(event) on_built_entity(event.created_entity) end, filters)
+script.on_event(defines.events.on_robot_built_entity, function(event) on_built_entity(event.created_entity) end, filters)
+script.on_event(defines.events.script_raised_built, function(event) on_built_entity(event.entity) end)
+script.on_event(defines.events.script_raised_revive, function(event) on_built_entity(event.entity) end)
+
+script.on_event(defines.events.on_entity_cloned, function(event) on_built_entity(event.destination,event.source) end)
+
+script.on_event(defines.events.on_pre_player_mined_item, function(event) on_destroying_entity(event.entity) end, filters)
+script.on_event(defines.events.on_robot_pre_mined, function(event) on_destroying_entity(event.entity) end, filters)
+script.on_event(defines.events.on_entity_died, function(event) on_destroying_entity(event.entity) end, filters)
+script.on_event(defines.events.script_raised_destroy, function(event) on_destroying_entity(event.entity) end)
+script.on_event(defines.events.on_pre_chunk_deleted, function(event)
+  for _,chunk in pairs(event.positions) do
+    local x = chunk.x
+    local y = chunk.y
+    local area = {{x*32,y*32},{31+x*32,31+y*32}}
+    for _,ent in pairs(game.get_surface(event.surface_index).find_entities_filtered{name = "magic-lamp",area = area}) do
+      on_destroying_entity(ent)
+    end
+  end
+end)
+script.on_event(defines.events.on_pre_surface_cleared,function (event)
+  for _,ent in pairs(game.get_surface(event.surface_index).find_entities_filtered{name = "magic-lamp"}) do
+    on_destroying_entity(ent)
+  end
+end)
+script.on_event(defines.events.on_pre_surface_deleted,function (event)
+  for _,ent in pairs(game.get_surface(event.surface_index).find_entities_filtered{name = "magic-lamp"}) do
+    on_destroying_entity(ent)
+  end
 end)
