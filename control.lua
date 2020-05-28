@@ -788,17 +788,22 @@ script.on_event(defines.events.on_player_setup_blueprint, function(event)
   local blueprint = player.blueprint_to_setup
   if not blueprint.valid_for_read then
     blueprint = player.cursor_stack
+    if not blueprint.valid_for_read then
+      return
+    end
   end
   local bpentities = blueprint.get_blueprint_entities()
-  for i,bpent in pairs(bpentities) do
-    if bpent.name == "magic-lamp" and mapping[i] and mapping[i].name == "magic-lamp" then
-      local config = table.deepcopy(global.lamps[mapping[i].unit_number].config)
-      strip_and_validate_config(config)
-      local tag = {
-        version = 1,
-        config = config
-      }
-      blueprint.set_blueprint_entity_tag(i,"magic-lamp",tag)
+  if bpentities then
+    for i,bpent in pairs(bpentities) do
+      if bpent.name == "magic-lamp" and mapping[i] and mapping[i].name == "magic-lamp" then
+        local config = table.deepcopy(global.lamps[mapping[i].unit_number].config)
+        strip_and_validate_config(config)
+        local tag = {
+          version = 1,
+          config = config
+        }
+        blueprint.set_blueprint_entity_tag(i,"magic-lamp",tag)
+      end
     end
   end
 end)
