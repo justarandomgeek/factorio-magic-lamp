@@ -366,7 +366,7 @@ local function write_config_to_cc(entity)
   end
 
   control.enabled = false
-  control.parameters = {parameters = frame}
+  control.parameters = frame
 
 end
 
@@ -375,7 +375,7 @@ local function read_config_from_cc(entity)
   local control = entity.get_or_create_control_behavior()
 
   if not control.enabled then
-    local frame = control.parameters.parameters
+    local frame = control.parameters
 
     if frame[1].signal.type == "virtual" and frame[1].signal.name == "signal-dot" then
       local mode = frame[1].count % 0x100
@@ -697,6 +697,7 @@ script.on_event(defines.events.on_gui_checked_state_changed, function(event)
   end
 end)
 
+local disallowed_signals = {["signal-each"]=true,["signal-anything"]=true,["signal-everything"]=true,}
 script.on_event(defines.events.on_gui_elem_changed, function(event)
   local player = game.players[event.player_index]
   if event.element.name == "magic_lamp.signal" then
@@ -709,7 +710,11 @@ script.on_event(defines.events.on_gui_elem_changed, function(event)
         signal = nil, unsigned=false, hex=false, float=false
       }
     end
-    sigconfig[i].signal = event.element.elem_value
+    local signal = event.element.elem_value
+    if signal and signal.type == "virtual" and disallowed_signals[signal.name] then
+      signal = nil
+    end
+    sigconfig[i].signal = signal
     sigconfig[i].lastvalue = nil
     reload_gui_after_change(lamp.entity,player)
   end
