@@ -1,4 +1,7 @@
 require("util")
+local bit32 = bit32
+local pairs = pairs
+local ipairs = ipairs
 
 local ml_defines = {
   configmode = {
@@ -107,16 +110,17 @@ local function get_signals_filtered(filters,entity)
 end
 
 local function get_signal_bit_set(set)
+  local band,extract,replace = bit32.band,bit32.extract,bit32.replace
   local sigbits = {}
   local bitsleft = -1
   for _,sig in ipairs(set) do
-    local newbits = bit32.band(sig.count,bitsleft)
+    local newbits = band(sig.count,bitsleft)
     if newbits ~= 0 then
-      for i=0,30 do
-        local sigbit = bit32.extract(newbits,i)
+      for i=0,31 do
+        local sigbit = extract(newbits,i)
         if sigbit==1 then
           sigbits[i+1] = sig.signal
-          bitsleft = bit32.replace(bitsleft,0,i)
+          bitsleft = replace(bitsleft,0,i)
           if bitsleft == 0 then
             return sigbits
           end
@@ -251,7 +255,7 @@ end
 local function on_tick_iconstrip_lamp(lamp)
   local signals = lamp.entity.get_merged_signals() or {}
   local bits = get_signal_bit_set(signals)
-  for i=1,31 do
+  for i=1,32 do
     if bits[i] then
       local type = bits[i].type
       if type == "virtual" then type = "virtual-signal" end
