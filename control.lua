@@ -55,6 +55,25 @@ script.on_init(function()
   }
 end)
 
+local function new_config()
+  local config = {
+    mode = ml_defines.configmode.numeric,
+    iconstrip = {endian = ml_defines.iconstrip_endian.lsb_left, numeric=true},
+    numeric = {
+      icons = true,
+      names = false,
+      signals = {
+        {type=ml_defines.datatype.signed, hex=false},
+        {type=ml_defines.datatype.signed, hex=false},
+        {type=ml_defines.datatype.signed, hex=false},
+   	    {type=ml_defines.datatype.signed, hex=false},
+      },
+    },
+  }
+  
+  return config
+end
+
 script.on_configuration_changed(function()
   local protos = {
     virtual = game.virtual_signal_prototypes,
@@ -374,8 +393,8 @@ local function write_config_to_cc(entity)
 
 end
 
-local function read_config_from_cc(entity)
-  local config = global.lamps[entity.unit_number].config
+local function local_read_config_from_cc(entity)
+  local config =new_config()
   local control = entity.get_or_create_control_behavior()
 
   if not control.enabled then
@@ -407,6 +426,12 @@ local function read_config_from_cc(entity)
       end
     end
   end
+  
+  return config
+end
+
+local function read_config_from_cc(entity)
+  global.lamps[entity.unit_number].config = local_read_config_from_cc(entity)
   -- and write it back in case any of it was invalid...
   write_config_to_cc(entity)
 end
@@ -805,7 +830,12 @@ script.on_event(defines.events.on_player_setup_blueprint, function(event)
   if bpentities then
     for i,bpent in pairs(bpentities) do
       if bpent.name == "magic-lamp" and mapping[i] and mapping[i].name == "magic-lamp" then
-        local config = table.deepcopy(global.lamps[mapping[i].unit_number].config)
+		local config = {}
+		if global.lamps[mapping[i].unit_number] == nil then
+		  config = local_read_config_from_cc(mapping[i])
+		else
+		  config = table.deepcopy(global.lamps[mapping[i].unit_number].config)
+		end
         strip_and_validate_config(config)
         local tag = {
           version = 1,
@@ -822,20 +852,7 @@ local function on_built_entity(entity,cloned_from,tags)
   if entity.name == "magic-lamp" then
     global.lamps[entity.unit_number] = {
       entity = entity,
-      config = {
-        mode = ml_defines.configmode.numeric,
-        iconstrip = {endian = ml_defines.iconstrip_endian.lsb_left, numeric=true},
-        numeric = {
-          icons = true,
-          names = false,
-          signals = {
-            {type=ml_defines.datatype.signed, hex=false},
-            {type=ml_defines.datatype.signed, hex=false},
-            {type=ml_defines.datatype.signed, hex=false},
-            {type=ml_defines.datatype.signed, hex=false},
-          },
-        },
-      },
+      config = new_config(),
       render = {
         icons = {},
         names = {},
