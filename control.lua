@@ -868,6 +868,10 @@ local function on_built_entity(entity,cloned_from,tags)
 end
 
 local function cleanup_lamp(unit_number)
+  if global.lamps[unit_number] == nil then
+    return
+  end
+
   global.lamps[unit_number] = nil
   if global.next_lamp == unit_number then
     global.next_lamp = nil
@@ -880,21 +884,19 @@ local function cleanup_lamp(unit_number)
 end
 
 local function on_destroying_entity(entity)
-  if entity.name == "magic-lamp" then
-    cleanup_lamp(entity.unit_number)
-  end
+  cleanup_lamp(entity.unit_number)
 end
 
 local function on_post_entity_died(ghost,unit_number)
-  if ghost.ghost_name == "magic-lamp" then
+  if ghost ~= nil and ghost.ghost_name == "magic-lamp" then
     local tags = ghost.tags or {}
     tags["magic-lamp"] = {
       version = 1,
       config = global.lamps[unit_number].config
     }
     ghost.tags = tags
-    cleanup_lamp(unit_number)
   end
+  cleanup_lamp(unit_number)
 end
 
 local filters = {
@@ -903,14 +905,14 @@ local filters = {
 
 script.on_event(defines.events.on_built_entity, function(event) on_built_entity(event.created_entity,nil,event.tags) end, filters)
 script.on_event(defines.events.on_robot_built_entity, function(event) on_built_entity(event.created_entity,nil,event.tags) end, filters)
-script.on_event(defines.events.script_raised_built, function(event) on_built_entity(event.entity,nil,event.tags) end)
-script.on_event(defines.events.script_raised_revive, function(event) on_built_entity(event.entity,nil,event.tags) end)
+script.on_event(defines.events.script_raised_built, function(event) on_built_entity(event.entity,nil,event.tags) end, filters)
+script.on_event(defines.events.script_raised_revive, function(event) on_built_entity(event.entity,nil,event.tags) end, filters)
 
-script.on_event(defines.events.on_entity_cloned, function(event) on_built_entity(event.destination,event.source) end)
+script.on_event(defines.events.on_entity_cloned, function(event) on_built_entity(event.destination,event.source) end, filters)
 
 script.on_event(defines.events.on_pre_player_mined_item, function(event) on_destroying_entity(event.entity) end, filters)
 script.on_event(defines.events.on_robot_pre_mined, function(event) on_destroying_entity(event.entity) end, filters)
-script.on_event(defines.events.script_raised_destroy, function(event) on_destroying_entity(event.entity) end)
+script.on_event(defines.events.script_raised_destroy, function(event) on_destroying_entity(event.entity) end, filters)
 
 script.on_event(defines.events.on_post_entity_died, function(event) on_post_entity_died(event.ghost,event.unit_number) end,
 {{filter="type",type="constant-combinator"}})
