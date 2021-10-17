@@ -3,6 +3,8 @@ local bit32 = bit32
 local pairs = pairs
 local ipairs = ipairs
 
+local lamps_exist = true
+
 local ml_defines = {
   configmode = {
     numeric = 1,
@@ -96,19 +98,6 @@ local function float_from_int(i)
   return sign * math.ldexp(bit32.bor(significand,0x00800000),exponent-23) --[[normal numbers]]
 end
 
-local function get_signals_filtered(filters,entity)
-  --   filters = {
-  --  SignalID,
-  --  ...
-  --  }
-  local results = {}
-  local get_signal = entity.get_merged_signal
-  for i,f in pairs(filters) do
-    results[i] = get_signal(f)
-  end
-  return results
-end
-
 local function get_signal_bit_set(set)
   local band,extract,replace = bit32.band,bit32.extract,bit32.replace
   local sigbits = {}
@@ -133,25 +122,15 @@ end
 
 local function on_tick_numeric_lamp(lamp)
   local sigconfig = lamp.config.numeric.signals
-  local filters = {}
-  for i = 1,4 do
-    local sigconfigi = sigconfig[i]
-    if sigconfigi and sigconfigi.signal then
-      filters[i] = sigconfigi.signal
-    end
-  end
-
-  local filteredsignals = get_signals_filtered(filters, lamp.entity)
 
   for i=1,4 do
-    local sigconfigi = sigconfig[i]
-    if sigconfigi and sigconfigi.signal then
-      local value = filteredsignals[i] or 0
+    if sigconfig[i] and sigconfig[i].signal then
+      local value = lamp.entity.get_merged_signal(sigconfig[i].signal) or 0
 
-      if sigconfigi.lastvalue ~= value then
-        sigconfigi.lastvalue = value
-        local hex = sigconfigi.hex
-        local type = sigconfigi.type
+      if sigconfig[i].lastvalue ~= value then
+        sigconfig[i].lastvalue = value
+        local hex = sigconfig[i].hex
+        local type = sigconfig[i].type
         local format = hex and "0x%08x" or "%i"
         if type == ml_defines.datatype.signed and hex and value < 0 then
           -- negative hex
@@ -189,10 +168,10 @@ local function on_tick_numeric_lamp(lamp)
           local type = sigconfig[i].signal.type
           if type == "virtual" then type = "virtual-signal" end
           if lamp.render.icons[i] and rendering.is_valid(lamp.render.icons[i]) then
-            rendering.set_sprite(lamp.render.icons[i], type .. "/" .. sigconfigi.signal.name)
+            rendering.set_sprite(lamp.render.icons[i], type .. "/" .. sigconfig[i].signal.name)
           else
             lamp.render.icons[i] = rendering.draw_sprite{
-              sprite = type .. "/" .. sigconfigi.signal.name,
+              sprite = type .. "/" .. sigconfig[i].signal.name,
               surface = lamp.entity.surface,
               target = lamp.entity,
               target_offset = { 0, i},
@@ -453,15 +432,27 @@ end
 
 
 script.on_event(defines.events.on_tick, function()
+  if not lamps_exist then
+    return
+  end
+
   if global.next_lamp and not global.lamps[global.next_lamp] then
     global.next_lamp=nil
   end
-  for _=1, settings.global["magic-lamp-updates-per-tick"].value do
+
+  local update_n = settings.global["magic-lamp-updates-per-tick"].value
+  if update_n == 0 then
+    return
+  end
+
+  lamps_exist = false
+  for _=1, update_n do
     local lamp
     global.next_lamp,lamp = next(global.lamps,global.next_lamp)
 
     if lamp then
       if lamp.entity.valid then
+        lamps_exist = true
         on_tick_lamp(lamp)
       else
         global.lamps[global.next_lamp] = nil
@@ -820,6 +811,7 @@ end)
 
 local function on_built_entity(entity,cloned_from,tags)
   if entity.name == "magic-lamp" then
+    lamps_exist = true
     global.lamps[entity.unit_number] = {
       entity = entity,
       config = {
