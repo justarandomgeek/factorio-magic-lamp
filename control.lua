@@ -3,6 +3,8 @@ local bit32 = bit32
 local pairs = pairs
 local ipairs = ipairs
 
+local lamps_exist = true
+
 local ml_defines = {
   configmode = {
     numeric = 1,
@@ -430,15 +432,27 @@ end
 
 
 script.on_event(defines.events.on_tick, function()
+  if not lamps_exist then
+    return
+  end
+
   if global.next_lamp and not global.lamps[global.next_lamp] then
     global.next_lamp=nil
   end
-  for _=1, settings.global["magic-lamp-updates-per-tick"].value do
+
+  local update_n = settings.global["magic-lamp-updates-per-tick"].value
+  if update_n == 0 then
+    return
+  end
+
+  lamps_exist = false
+  for _=1, update_n do
     local lamp
     global.next_lamp,lamp = next(global.lamps,global.next_lamp)
 
     if lamp then
       if lamp.entity.valid then
+        lamps_exist = true
         on_tick_lamp(lamp)
       else
         global.lamps[global.next_lamp] = nil
@@ -797,6 +811,7 @@ end)
 
 local function on_built_entity(entity,cloned_from,tags)
   if entity.name == "magic-lamp" then
+    lamps_exist = true
     global.lamps[entity.unit_number] = {
       entity = entity,
       config = {
